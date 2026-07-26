@@ -3,13 +3,13 @@
 */
 
 use eframe::{
-    egui::{self, Color32, RichText, Stroke},
+    egui::{self, Color32, Response, RichText, Ui},
     Result,
 };
 
 const LEFT_PANEL_SIZE: f32 = 150.;
 const LEFT_PENEL_HEADER_TEXT_SIZE: f32 = 30.;
-const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 10.;
+const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 
 fn main() -> Result {
@@ -28,29 +28,64 @@ fn main() -> Result {
     Ok(())
 }
 
-// NOTE there's only one selectable widget
 #[derive(Default)]
 struct HabitTracker {
+    habits: Vec<Habit>,
+    // NOTE i'll have two sources from one information
+    // habit_selected: Habit
+    responses: Vec<Response>,
+}
+
+struct Habit {
+    name: RichText,
     selected: bool,
 }
 
-// NOTE i don't want for now to impl dynamic adding/deleting habits
-enum _Habit {}
+impl Habit {
+    fn new(name: RichText, selected: bool) -> Self {
+        Self { name, selected }
+    }
+}
 
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_global_style.
-        // Restore app state using cc.storage (requires the "persistence" feature).
-        // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
-        // for e.g. egui::PaintCallback.
-        Self::default()
+        let habit_1 = Habit::new(
+            RichText::new("reading").size(LEFT_PANEL_HABIT_TEXT_SIZE),
+            false,
+        );
+        let habit_2 = Habit::new(
+            RichText::new("workout").size(LEFT_PANEL_HABIT_TEXT_SIZE),
+            false,
+        );
+        let habit_3 = Habit::new(
+            RichText::new("writing").size(LEFT_PANEL_HABIT_TEXT_SIZE),
+            false,
+        );
+        let habits = vec![habit_1, habit_2, habit_3];
+
+        let responses = Vec::new();
+
+        Self { habits, responses }
+    }
+}
+
+impl HabitTracker {
+    fn _change_ui_visuals(ui: &mut Ui) {
+        let ui_visuals = ui.visuals_mut();
+        // keyboard focus
+        ui_visuals.widgets.active.weak_bg_fill = Color32::LIGHT_GREEN;
+        // hovering with mouse
+        ui_visuals.widgets.hovered.weak_bg_fill = Color32::LIGHT_GREEN;
+        // when selected
+        ui_visuals.selection.bg_fill = Color32::BLUE;
     }
 }
 
 impl eframe::App for HabitTracker {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Left panel
+        //HabitTracker::_change_ui_visuals(ui);
 
+        // Left panel
         egui::Panel::left("my_left_panel")
             .resizable(false)
             .default_size(LEFT_PANEL_SIZE)
@@ -62,27 +97,18 @@ impl eframe::App for HabitTracker {
                 ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
 
                 ui.vertical_centered_justified(|ui| {
-                    let ui_visuals = ui.visuals_mut();
-                    // keyboard focus
-                    ui_visuals.widgets.active.weak_bg_fill = Color32::LIGHT_GREEN;
-                    // hovering with mouse
-                    ui_visuals.widgets.hovered.weak_bg_fill = Color32::LIGHT_GREEN;
-                    //ui_visuals.selection.bg_fill = Color32::BLUE;
+                    // constructing widgets
+                    for habit in self.habits.iter_mut() {
+                        let response =
+                            ui.toggle_value(&mut habit.selected, habit.name.clone());
+                        self.responses.push(response);
+                    }
 
-                    let i = 1;
-                    let text = RichText::new(format!("{i} -> Habit-{i}"))
-                        .size(LEFT_PANEL_HABIT_TEXT_SIZE);
-                    let response = ui.toggle_value(&mut self.selected, text);
-
-                    let i = 2;
-                    let text = RichText::new(format!("{i} -> Habit-{i}"))
-                        .size(LEFT_PANEL_HABIT_TEXT_SIZE);
-                    let response = ui.toggle_value(&mut self.selected, text);
-
-                    let i = 3;
-                    let text = RichText::new(format!("{i} -> Habit-{i}"))
-                        .size(LEFT_PANEL_HABIT_TEXT_SIZE);
-                    let response = ui.toggle_value(&mut self.selected, text);
+                    // TODO if selected on, turns off highlighting from the others (if any)
+                    // widgets functionnlity
+                    for response in self.responses.iter() {
+                        //
+                    }
                 })
             });
 
