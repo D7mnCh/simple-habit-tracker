@@ -3,7 +3,7 @@
 */
 
 use eframe::{
-    egui::{self, Color32, Response, RichText, Ui},
+    egui::{self, Color32, RichText, Ui},
     Result,
 };
 
@@ -28,44 +28,20 @@ fn main() -> Result {
     Ok(())
 }
 
-#[derive(Default)]
 struct HabitTracker {
-    habits: Vec<Habit>,
-    // NOTE i'll have two sources from one information
-    // habit_selected: Habit
-    responses: Vec<Response>,
+    habit: Habit,
 }
 
-struct Habit {
-    name: RichText,
-    selected: bool,
-}
-
-impl Habit {
-    fn new(name: RichText, selected: bool) -> Self {
-        Self { name, selected }
-    }
+#[derive(PartialEq)]
+enum Habit {
+    Read,
+    Write,
+    Sport,
 }
 
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let habit_1 = Habit::new(
-            RichText::new("reading").size(LEFT_PANEL_HABIT_TEXT_SIZE),
-            false,
-        );
-        let habit_2 = Habit::new(
-            RichText::new("workout").size(LEFT_PANEL_HABIT_TEXT_SIZE),
-            false,
-        );
-        let habit_3 = Habit::new(
-            RichText::new("writing").size(LEFT_PANEL_HABIT_TEXT_SIZE),
-            false,
-        );
-        let habits = vec![habit_1, habit_2, habit_3];
-
-        let responses = Vec::new();
-
-        Self { habits, responses }
+        Self { habit: Habit::Read }
     }
 }
 
@@ -79,10 +55,33 @@ impl HabitTracker {
         // when selected
         ui_visuals.selection.bg_fill = Color32::BLUE;
     }
+
+    // NOTE i didn't use self but it looks kinda wierd if i remove it
+    //and access this member function via path
+    fn display_left_panel_header(ui: &mut Ui) {
+        let text = "Habits";
+        let label = RichText::new(text).size(LEFT_PENEL_HEADER_TEXT_SIZE);
+
+        ui.heading(label);
+    }
+
+    fn dispaly_left_panel_widgets(&mut self, ui: &mut Ui) {
+        let read_msg = RichText::new("reading").size(LEFT_PANEL_HABIT_TEXT_SIZE);
+        let write_msg = RichText::new("workout").size(LEFT_PANEL_HABIT_TEXT_SIZE);
+        let sport_msg = RichText::new("writing").size(LEFT_PANEL_HABIT_TEXT_SIZE);
+
+        let _response = ui.selectable_value(&mut self.habit, Habit::Read, read_msg);
+        let _response =
+            ui.selectable_value(&mut self.habit, Habit::Write, write_msg);
+        let _response =
+            ui.selectable_value(&mut self.habit, Habit::Sport, sport_msg);
+    }
 }
 
 impl eframe::App for HabitTracker {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    // this act like while loop, will get exectued 60 times per second
+    // NOTE this method should only used for display ?
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         //HabitTracker::_change_ui_visuals(ui);
 
         // Left panel
@@ -90,25 +89,12 @@ impl eframe::App for HabitTracker {
             .resizable(false)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
-                let text = "Habits";
-                let label = RichText::new(text).size(LEFT_PENEL_HEADER_TEXT_SIZE);
-                ui.heading(label);
+                HabitTracker::display_left_panel_header(ui);
 
                 ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
 
                 ui.vertical_centered_justified(|ui| {
-                    // constructing widgets
-                    for habit in self.habits.iter_mut() {
-                        let response =
-                            ui.toggle_value(&mut habit.selected, habit.name.clone());
-                        self.responses.push(response);
-                    }
-
-                    // TODO if selected on, turns off highlighting from the others (if any)
-                    // widgets functionnlity
-                    for response in self.responses.iter() {
-                        //
-                    }
+                    self.dispaly_left_panel_widgets(ui);
                 })
             });
 
