@@ -18,12 +18,13 @@ const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 
 // centeral panel parameters
-const YEAR_DAYS: u16 = 364; // TODO modify it later
-const WEEK_DAYS_ROW: u16 = 7;
-const YEAER_WEEKS_COLLUMN: u16 = 52;
+const YEAR_DAYS: u16 = 365;
 // NOTE this is gonna make space for all the widgets (that's bad...)
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
 const CELL_SIZE: Vec2 = vec2(12., 12.);
+// NOTE should i make an enum for cell color ?
+const UNMARKED_CELL_COLOR: Color32 = Color32::from_gray(40);
+const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(38, 166, 65);
 
 fn main() -> Result {
     let native_options = eframe::NativeOptions {
@@ -43,48 +44,89 @@ fn main() -> Result {
 }
 
 struct HabitTracker {
-    //habits: Vec<Habit>,
-    // NOTE maybe, but 2 source of info? (try)
-    //selected_habit: Habit,
-    habit: Habit,
+    habits: Vec<Habit>,
+    // neeced for building habit selecter widget
+    selected_habit: Habit,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone)]
 enum Habit {
-    //Read(Vec<Cell>),
-    //Write(Vec<Cell>),
-    //Sport(Vec<Cell>),
-    Read,
-    Write,
-    Sport,
+    Read(Vec<Cell>),
+    Write(Vec<Cell>),
+    Sport(Vec<Cell>),
 }
 
+// NOTE didn't understand the recurion thing here
+impl PartialEq for Habit {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self.which(), other.clone()),
+            (Self::Read(_), Self::Read(_))
+                | (Self::Write(_), Self::Write(_))
+                | (Self::Sport(_), Self::Sport(_))
+        )
+    }
+}
+
+impl Habit {
+    fn get_cells_mut(&mut self) -> &mut Vec<Cell> {
+        match self {
+            Self::Read(cells) => cells,
+            Self::Write(cells) => cells,
+            Self::Sport(cells) => cells,
+        }
+    }
+
+    fn which(&self) -> Habit {
+        match self {
+            Self::Read(_) => Self::Read(Vec::new()),
+            Self::Write(_) => Self::Write(Vec::new()),
+            Self::Sport(_) => Self::Sport(Vec::new()),
+        }
+    }
+}
+
+// NOTE thinking of not letting user manipulate cells to mark them only with a config file
+#[derive(Clone, PartialEq, Debug)]
 struct Cell {
     rect: Rect,
-    // if marked == gray ,else green
+    // if marked/clicked then green, else gray
     color: Color32,
 }
 
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let mut cells: Vec<Cell> = Vec::new();
-        for day in 0..YEAR_DAYS {
+        for _day in 0..YEAR_DAYS {
             let cell = Cell {
                 rect: Rect::ZERO,
-                color: Color32::from_gray(40),
+                color: UNMARKED_CELL_COLOR,
             };
             cells.push(cell);
         }
 
-        let habits = vec![Habit::Read, Habit::Write, Habit::Sport];
+        //let habits = vec![Habit::Read, Habit::Write, Habit::Sport];
+        let habits = vec![
+            Habit::Read(cells.clone()),
+            Habit::Write(cells.clone()),
+            Habit::Sport(cells.clone()),
+        ];
 
-        Self { habit: Habit::Read }
+        // Vec::new() for selected_habit cuz we are only using it for habit selection,
+        //we don't need actually the data
+        let cells: Vec<Cell> = Vec::new();
+
+        Self {
+            habits,
+            selected_habit: Habit::Read(cells),
+        }
     }
 }
 
 impl HabitTracker {
-    // NOTE i think when modifying visuals or style, you are modifying the whole
-    // widgets
+    // NOTE i think when modifying visuals or style, you are modifying the whole widgets
+    // i might need to use rect and allocate methods in order to make costumize only
+    //want i want
 
     // NOTE let tweaking visuals for later
     fn _change_ui_visuals(ui: &mut Ui) {
@@ -98,7 +140,8 @@ impl HabitTracker {
     }
 
     fn change_ui_style(ui: &mut Ui) {
-        // reduce checkboxes spaces between each other
+        // NOTE it will reduce spacing whith the whole widget
+        // TODO there is ui.scope my boy
         ui.spacing_mut().item_spacing = SPACE_BETWEEN_CELLS;
     }
 
@@ -113,51 +156,123 @@ impl HabitTracker {
     }
 
     fn dispaly_left_panel_widgets(&mut self, ui: &mut Ui) {
-        // NOTE all habits gonna be blued, cuz habit == Habit::...(if equel then blue)
-        //for habit in self.habits.iter_mut() {
-        //    match habit {
-        //        Habit::Write => {
-        //            let write_msg =
-        //                RichText::new("writing").size(LEFT_PANEL_HABIT_TEXT_SIZE);
-        //            ui.selectable_value(habit, Habit::Write, write_msg);
-        //        }
-        //        Habit::Read => {
-        //            let read_msg =
-        //                RichText::new("reading").size(LEFT_PANEL_HABIT_TEXT_SIZE);
-        //            ui.selectable_value(habit, Habit::Read, read_msg);
-        //        }
-        //        Habit::Sport => {
-        //            let sport_msg =
-        //                RichText::new("workout").size(LEFT_PANEL_HABIT_TEXT_SIZE);
-        //            ui.selectable_value(habit, Habit::Sport, sport_msg);
-        //        }
-        //    };
-        //}
-
-        let write_msg = RichText::new("writing").size(LEFT_PANEL_HABIT_TEXT_SIZE);
-        let read_msg = RichText::new("reading").size(LEFT_PANEL_HABIT_TEXT_SIZE);
-        let sport_msg = RichText::new("workout").size(LEFT_PANEL_HABIT_TEXT_SIZE);
-        let _response = ui.selectable_value(&mut self.habit, Habit::Read, read_msg);
-        let _response =
-            ui.selectable_value(&mut self.habit, Habit::Write, write_msg);
-        let _response =
-            ui.selectable_value(&mut self.habit, Habit::Sport, sport_msg);
+        for habit in self.habits.iter() {
+            match habit {
+                Habit::Write(_) => {
+                    let write_msg =
+                        RichText::new("writing").size(LEFT_PANEL_HABIT_TEXT_SIZE);
+                    let _response = ui.selectable_value(
+                        &mut self.selected_habit,
+                        Habit::Write(Vec::new()),
+                        write_msg,
+                    );
+                }
+                Habit::Read(_) => {
+                    let read_msg =
+                        RichText::new("reading").size(LEFT_PANEL_HABIT_TEXT_SIZE);
+                    let _response = ui.selectable_value(
+                        &mut self.selected_habit,
+                        Habit::Read(Vec::new()),
+                        read_msg,
+                    );
+                }
+                Habit::Sport(_) => {
+                    let sport_msg =
+                        RichText::new("sport").size(LEFT_PANEL_HABIT_TEXT_SIZE);
+                    let _response = ui.selectable_value(
+                        &mut self.selected_habit,
+                        Habit::Sport(Vec::new()),
+                        sport_msg,
+                    );
+                }
+            };
+        }
     }
 
     // central panel
-    // TODO Need to store data somewhere
-    fn dispaly_central_panel_cell(&self, ui: &mut Ui) {
-        // NOTE i can create a rect and then use allocate_rect for sense parameter,
-        // when creating rect i don't need to use ui
-        let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
-        // TODO use self.color
-        ui.painter().rect_filled(rect, 4., Color32::from_gray(40));
+    // NOTE display from name should not take &mut self?, maybe this is allowed cuz
+    //i am using an immediate mode gui library
+    fn dispaly_central_panel_cells(&mut self, ui: &mut Ui) {
+        match &self.selected_habit {
+            Habit::Write(_) => {
+                for habit in self.habits.iter_mut() {
+                    if *habit == self.selected_habit {
+                        let cells = habit.get_cells_mut();
+                        for cell in cells {
+                            let (rect, response) =
+                                ui.allocate_exact_size(CELL_SIZE, Sense::click());
+                            cell.rect = rect;
+                            ui.painter().rect_filled(rect, 4., cell.color);
 
-        if response.clicked() {
-            ui.painter()
-                .rect_filled(rect, 4., Color32::from_rgb(38, 166, 65));
+                            if response.clicked() {
+                                if cell.color == UNMARKED_CELL_COLOR {
+                                    cell.color = MARKED_CELL_COLOR;
+                                    ui.painter().rect_filled(rect, 4., cell.color);
+                                } else {
+                                    cell.color = UNMARKED_CELL_COLOR;
+                                    ui.painter().rect_filled(rect, 4., cell.color);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            Habit::Sport(_) => {
+                for habit in self.habits.iter_mut() {
+                    if *habit == self.selected_habit {
+                        let cells = habit.get_cells_mut();
+                        for cell in cells {
+                            let (rect, response) =
+                                ui.allocate_exact_size(CELL_SIZE, Sense::click());
+                            cell.rect = rect;
+                            ui.painter().rect_filled(rect, 4., cell.color);
+
+                            if response.clicked() {
+                                if cell.color == UNMARKED_CELL_COLOR {
+                                    cell.color = MARKED_CELL_COLOR;
+                                    ui.painter().rect_filled(rect, 4., cell.color);
+                                } else {
+                                    cell.color = UNMARKED_CELL_COLOR;
+                                    ui.painter().rect_filled(rect, 4., cell.color);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            Habit::Read(_) => {
+                for habit in self.habits.iter_mut() {
+                    if *habit == self.selected_habit {
+                        let cells = habit.get_cells_mut();
+                        for cell in cells {
+                            let (rect, response) =
+                                ui.allocate_exact_size(CELL_SIZE, Sense::click());
+                            cell.rect = rect;
+                            ui.painter().rect_filled(rect, 4., cell.color);
+
+                            if response.clicked() {
+                                println!("change color for one cell only");
+                                if cell.color == UNMARKED_CELL_COLOR {
+                                    cell.color = MARKED_CELL_COLOR;
+                                    ui.painter().rect_filled(rect, 4., cell.color);
+                                } else {
+                                    cell.color = UNMARKED_CELL_COLOR;
+                                    ui.painter().rect_filled(rect, 4., cell.color);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
         }
     }
+
+    // TODO use allocate
+    fn display_months_raw(&mut self) {}
+    fn display_days_column(&mut self) {}
 }
 
 impl eframe::App for HabitTracker {
@@ -165,7 +280,7 @@ impl eframe::App for HabitTracker {
     // NOTE this method should only be used for display ?
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         //HabitTracker::_change_ui_visuals(ui);
-        HabitTracker::change_ui_style(ui);
+        //HabitTracker::change_ui_style(ui);
 
         // Left panel
         egui::Panel::left("my_left_panel")
@@ -184,17 +299,19 @@ impl eframe::App for HabitTracker {
         // Centeral Panl
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TODO");
+            ui.horizontal_wrapped(|ui| {
+                self.dispaly_central_panel_cells(ui);
+            });
 
-            // NOTE maybe i'll change the logic here to get 365
-            for day in 0..WEEK_DAYS_ROW {
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        for week in 0..YEAER_WEEKS_COLLUMN {
-                            self.dispaly_central_panel_cell(ui);
-                        }
-                    });
-                });
-            }
+            //for _day in 0..WEEK_DAYS_ROW {
+            //    ui.vertical(|ui| {
+            //        ui.horizontal(|ui| {
+            //            for _week in 0..YEAER_WEEKS_COLUMN {
+            //                self.dispaly_central_panel_cells(ui);
+            //            }
+            //        });
+            //    });
+            //}
         });
     }
 }
