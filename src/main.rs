@@ -124,10 +124,6 @@ impl HabitTracker {
 }
 
 impl HabitTracker {
-    // NOTE i think when modifying visuals or style, you are modifying the whole widgets
-    // i might need to use rect and allocate methods in order to make costumize only
-    //want i want
-
     // NOTE let tweaking visuals for later
     fn _change_ui_visuals(ui: &mut Ui) {
         let ui_visuals = ui.visuals_mut();
@@ -139,9 +135,7 @@ impl HabitTracker {
         ui_visuals.selection.bg_fill = Color32::BLUE;
     }
 
-    fn change_ui_style(ui: &mut Ui) {
-        // NOTE it will reduce spacing whith the whole widget
-        // TODO there is ui.scope my boy
+    fn change_cells_spacing(ui: &mut Ui) {
         ui.spacing_mut().item_spacing = SPACE_BETWEEN_CELLS;
     }
 
@@ -253,7 +247,6 @@ impl HabitTracker {
                             ui.painter().rect_filled(rect, 4., cell.color);
 
                             if response.clicked() {
-                                println!("change color for one cell only");
                                 if cell.color == UNMARKED_CELL_COLOR {
                                     cell.color = MARKED_CELL_COLOR;
                                     ui.painter().rect_filled(rect, 4., cell.color);
@@ -269,10 +262,6 @@ impl HabitTracker {
             }
         }
     }
-
-    // TODO use allocate
-    fn display_months_raw(&mut self) {}
-    fn display_days_column(&mut self) {}
 }
 
 impl eframe::App for HabitTracker {
@@ -280,7 +269,6 @@ impl eframe::App for HabitTracker {
     // NOTE this method should only be used for display ?
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         //HabitTracker::_change_ui_visuals(ui);
-        //HabitTracker::change_ui_style(ui);
 
         // Left panel
         egui::Panel::left("my_left_panel")
@@ -299,19 +287,13 @@ impl eframe::App for HabitTracker {
         // Centeral Panl
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TODO");
-            ui.horizontal_wrapped(|ui| {
-                self.dispaly_central_panel_cells(ui);
-            });
 
-            //for _day in 0..WEEK_DAYS_ROW {
-            //    ui.vertical(|ui| {
-            //        ui.horizontal(|ui| {
-            //            for _week in 0..YEAER_WEEKS_COLUMN {
-            //                self.dispaly_central_panel_cells(ui);
-            //            }
-            //        });
-            //    });
-            //}
+            ui.scope(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    HabitTracker::change_cells_spacing(ui);
+                    self.dispaly_central_panel_cells(ui);
+                });
+            });
         });
     }
 }
