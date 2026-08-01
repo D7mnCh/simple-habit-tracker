@@ -8,7 +8,7 @@ const WINDOW_SIZE: Vec2 = vec2(800., 400.);
 
 // left panel parameters
 const LEFT_PANEL_SIZE: f32 = 100.;
-const LEFT_PENEL_HEADER_TEXT_SIZE: f32 = 25.;
+const HEADER_SIZE: f32 = 25.;
 const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 
@@ -74,14 +74,14 @@ impl HabitTracker {
         let mut cells: Vec<Vec<Cell>> = Vec::new();
 
         for _day in DAYS {
-            let mut raw_cells: Vec<Cell> = Vec::new();
+            let mut cells_raw: Vec<Cell> = Vec::new();
             for _week in 0..WEEKS {
                 let cell = Cell {
                     color: UNMARKED_CELL_COLOR,
                 };
-                raw_cells.push(cell);
+                cells_raw.push(cell);
             }
-            cells.push(raw_cells);
+            cells.push(cells_raw);
         }
 
         let habit_1 = Habit {
@@ -108,6 +108,7 @@ impl HabitTracker {
 impl HabitTracker {
     // NOTE let tweaking visuals for later
 
+    // visuals and style
     fn _overide_left_panel_widgets_look(ui: &mut Ui) {
         let ui_visuals = ui.visuals_mut();
         // keyboard focus
@@ -124,10 +125,8 @@ impl HabitTracker {
 
     // left panel
     fn display_left_panel_header(ui: &mut Ui) {
-        let text = "Habits";
-        let label = RichText::new(text)
-            .size(LEFT_PENEL_HEADER_TEXT_SIZE)
-            .strong();
+        let header = "Habits";
+        let label = RichText::new(header).size(HEADER_SIZE).strong();
 
         ui.heading(label);
     }
@@ -145,14 +144,14 @@ impl HabitTracker {
     }
 
     // central panel
-    fn dispaly_central_panel_raw_cells(&mut self, ui: &mut Ui, raw_cells: usize) {
+    fn dispaly_central_panel_cells_raw(&mut self, ui: &mut Ui, cells_raw: usize) {
         let habit_cells = self
             .habits
             .iter_mut()
             .find(|habit| habit.name == self.selected_habit);
 
         if let Some(habit) = habit_cells {
-            for cell in habit.cells[raw_cells].iter_mut() {
+            for cell in habit.cells[cells_raw].iter_mut() {
                 let (rect, response) =
                     ui.allocate_exact_size(CELL_SIZE, Sense::click());
                 ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
@@ -169,16 +168,47 @@ impl HabitTracker {
             }
         }
     }
+    fn display_centeral_panel_header(&self, ui: &mut Ui) {
+        let header = self.selected_habit;
+        let label = RichText::new(header).size(HEADER_SIZE).strong();
 
-    fn _display_days_columns(_ui: &mut Ui) {}
-    fn _display_months_raw(_ui: &mut Ui) {}
+        ui.heading(label);
+    }
+
+    fn display_day_row(ui: &mut Ui, day: &str) {
+        ui.add_sized(DAY_LABEL_SIZE, Label::new(day));
+    }
+
+    fn display_months_raw(ui: &mut Ui) {
+        ui.add_space(40.);
+        ui.label("Jan");
+        ui.add_space(30.);
+        ui.label("Feb");
+        ui.add_space(30.);
+        ui.label("Mar");
+        ui.add_space(30.);
+        ui.label("Apr");
+        ui.add_space(30.);
+        ui.label("May");
+        ui.add_space(30.);
+        ui.label("Jun");
+        ui.add_space(30.);
+        ui.label("Jul");
+        ui.add_space(30.);
+        ui.label("Aug");
+        ui.add_space(30.);
+        ui.label("Sep");
+        ui.add_space(30.);
+        ui.label("Nov");
+        ui.add_space(30.);
+        ui.label("Dec");
+    }
 }
 
 impl eframe::App for HabitTracker {
     // this act like while loop, will get exectued 60 times per second
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         // Left panel
-
         egui::Panel::left("left_panel")
             .resizable(false)
             .default_size(LEFT_PANEL_SIZE)
@@ -194,41 +224,19 @@ impl eframe::App for HabitTracker {
 
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("TODO");
+            self.display_centeral_panel_header(ui);
             ui.horizontal(|ui| {
-                // custom
-                ui.add_space(40.);
-                ui.label("Jan");
-                ui.add_space(30.);
-                ui.label("Feb");
-                ui.add_space(30.);
-                ui.label("Mar");
-                ui.add_space(30.);
-                ui.label("Apr");
-                ui.add_space(30.);
-                ui.label("May");
-                ui.add_space(30.);
-                ui.label("Jun");
-                ui.add_space(30.);
-                ui.label("Jul");
-                ui.add_space(30.);
-                ui.label("Aug");
-                ui.add_space(30.);
-                ui.label("Sep");
-                ui.add_space(30.);
-                ui.label("Nov");
-                ui.add_space(30.);
-                ui.label("Dec");
+                HabitTracker::display_months_raw(ui);
             });
 
-            // NOTE i want each mounth have it's own cells
+            // TODO i want each mounth have it's own cells
             ui.scope(|ui| {
                 HabitTracker::overide_cells_spacing(ui);
                 ui.vertical(|ui| {
-                    for (raw_cells, day) in DAYS.iter().enumerate() {
+                    for (cells_raw, day) in DAYS.iter().enumerate() {
                         ui.horizontal(|ui| {
-                            ui.add_sized(DAY_LABEL_SIZE, Label::new(*day));
-                            self.dispaly_central_panel_raw_cells(ui, raw_cells);
+                            HabitTracker::display_day_row(ui, *day);
+                            self.dispaly_central_panel_cells_raw(ui, cells_raw);
                         });
                     }
                 });
