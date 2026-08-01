@@ -1,15 +1,10 @@
-/*
-- i'll try to finish this project in a week as max
-- i think it's time to introduce some hints from gbt
-*/
-
 use eframe::{
-    egui::{self, vec2, Color32, RichText, Sense, Ui, Vec2},
+    egui::{self, vec2, Color32, Label, RichText, Sense, Ui, Vec2},
     Result,
 };
 
 // window parameters
-const WINDOW_SIZE: Vec2 = vec2(850., 400.);
+const WINDOW_SIZE: Vec2 = vec2(800., 400.);
 
 // left panel parameters
 const LEFT_PANEL_SIZE: f32 = 100.;
@@ -18,26 +13,14 @@ const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 
 // centeral panel parameters
-const YEAR_DAYS: u16 = 365;
-// NOTE this is gonna make space for all the widgets (that's bad...)
+const DAYS: [&str; 7] = ["Sun", "Mon", "Tus", "Wed", "Thur", "Fri", "Sat"];
+const WEEKS: u16 = 52;
+const DAY_LABEL_SIZE: Vec2 = vec2(35., 15.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
-const CELL_SIZE: Vec2 = vec2(12., 12.);
+const CELL_SIZE: Vec2 = vec2(10., 10.);
+const CELL_RADIUS: f32 = 3.;
 const UNMARKED_CELL_COLOR: Color32 = Color32::from_gray(40);
-const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(38, 166, 65);
-
-#[derive(Debug, Clone)]
-
-// TODO
-struct Habit {
-    name: &'static str,
-    cells: Vec<Cell>,
-}
-
-//enum Habit {
-//    Read(Vec<Cell>),
-//    Write(Vec<Cell>),
-//    Sport(Vec<Cell>),
-//}
+const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(0, 109, 50);
 
 struct HabitTracker {
     habits: Vec<Habit>,
@@ -45,11 +28,27 @@ struct HabitTracker {
     selected_habit: &'static str,
 }
 
+#[derive(Debug, Clone)]
+struct Habit {
+    name: &'static str,
+    cells: Vec<Vec<Cell>>,
+}
+
 // NOTE thinking of not letting user manipulate cells to mark them only with a config file
 #[derive(Clone, PartialEq, Debug)]
 struct Cell {
     // if marked/clicked then green, else gray
     color: Color32,
+}
+
+// NOTE didn't understand the recurion thing here
+impl PartialEq for Habit {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self.name, other.name),
+            ("sport", "sport") | ("write", "write") | ("read", "read")
+        )
+    }
 }
 
 fn main() -> Result {
@@ -69,43 +68,20 @@ fn main() -> Result {
     Ok(())
 }
 
-// NOTE didn't understand the recurion thing here
-impl PartialEq for Habit {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self.name, other.name),
-            ("sport", "sport") | ("write", "write") | ("read", "read")
-        )
-    }
-}
-
-impl Habit {
-    //fn get_cells_mut(&mut self) -> &mut Vec<Cell> {
-    //    match self {
-    //        Self::Read(cells) => cells,
-    //        Self::Write(cells) => cells,
-    //        Self::Sport(cells) => cells,
-    //    }
-    //}
-    //
-    //fn which(&self) -> Habit {
-    //    match self {
-    //        Self::Read(_) => Self::Read(Vec::new()),
-    //        Self::Write(_) => Self::Write(Vec::new()),
-    //        Self::Sport(_) => Self::Sport(Vec::new()),
-    //    }
-    //}
-}
-
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let mut cells: Vec<Cell> = Vec::new();
-        for _day in 0..YEAR_DAYS {
-            let cell = Cell {
-                //rect: Rect::ZERO,
-                color: UNMARKED_CELL_COLOR,
-            };
-            cells.push(cell);
+        // NOTE i've get 364 days
+        let mut cells: Vec<Vec<Cell>> = Vec::new();
+
+        for _day in DAYS {
+            let mut raw_cells: Vec<Cell> = Vec::new();
+            for _week in 0..WEEKS {
+                let cell = Cell {
+                    color: UNMARKED_CELL_COLOR,
+                };
+                raw_cells.push(cell);
+            }
+            cells.push(raw_cells);
         }
 
         let habit_1 = Habit {
@@ -131,7 +107,8 @@ impl HabitTracker {
 
 impl HabitTracker {
     // NOTE let tweaking visuals for later
-    fn _change_ui_visuals(ui: &mut Ui) {
+
+    fn _overide_left_panel_widgets_look(ui: &mut Ui) {
         let ui_visuals = ui.visuals_mut();
         // keyboard focus
         ui_visuals.widgets.active.weak_bg_fill = Color32::LIGHT_GREEN;
@@ -141,7 +118,7 @@ impl HabitTracker {
         ui_visuals.selection.bg_fill = Color32::BLUE;
     }
 
-    fn change_cells_spacing(ui: &mut Ui) {
+    fn overide_cells_spacing(ui: &mut Ui) {
         ui.spacing_mut().item_spacing = SPACE_BETWEEN_CELLS;
     }
 
@@ -168,41 +145,41 @@ impl HabitTracker {
     }
 
     // central panel
-    fn dispaly_central_panel_cells(&mut self, ui: &mut Ui) {
+    fn dispaly_central_panel_raw_cells(&mut self, ui: &mut Ui, raw_cells: usize) {
         let habit_cells = self
             .habits
             .iter_mut()
             .find(|habit| habit.name == self.selected_habit);
 
         if let Some(habit) = habit_cells {
-            let cells = &mut habit.cells;
-            for cell in cells {
+            for cell in habit.cells[raw_cells].iter_mut() {
                 let (rect, response) =
                     ui.allocate_exact_size(CELL_SIZE, Sense::click());
-                ui.painter().rect_filled(rect, 4., cell.color);
+                ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
 
                 if response.clicked() {
                     if cell.color == UNMARKED_CELL_COLOR {
                         cell.color = MARKED_CELL_COLOR;
-                        ui.painter().rect_filled(rect, 4., cell.color);
+                        ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
                     } else {
                         cell.color = UNMARKED_CELL_COLOR;
-                        ui.painter().rect_filled(rect, 4., cell.color);
+                        ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
                     }
                 }
             }
         }
     }
+
+    fn _display_days_columns(_ui: &mut Ui) {}
+    fn _display_months_raw(_ui: &mut Ui) {}
 }
 
 impl eframe::App for HabitTracker {
     // this act like while loop, will get exectued 60 times per second
-    // NOTE this method should only be used for display ?
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        //HabitTracker::_change_ui_visuals(ui);
-
         // Left panel
-        egui::Panel::left("my_left_panel")
+
+        egui::Panel::left("left_panel")
             .resizable(false)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
@@ -215,14 +192,45 @@ impl eframe::App for HabitTracker {
                 })
             });
 
-        // Centeral Panl
+        // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TODO");
+            ui.horizontal(|ui| {
+                // custom
+                ui.add_space(40.);
+                ui.label("Jan");
+                ui.add_space(30.);
+                ui.label("Feb");
+                ui.add_space(30.);
+                ui.label("Mar");
+                ui.add_space(30.);
+                ui.label("Apr");
+                ui.add_space(30.);
+                ui.label("May");
+                ui.add_space(30.);
+                ui.label("Jun");
+                ui.add_space(30.);
+                ui.label("Jul");
+                ui.add_space(30.);
+                ui.label("Aug");
+                ui.add_space(30.);
+                ui.label("Sep");
+                ui.add_space(30.);
+                ui.label("Nov");
+                ui.add_space(30.);
+                ui.label("Dec");
+            });
 
+            // NOTE i want each mounth have it's own cells
             ui.scope(|ui| {
-                ui.horizontal_wrapped(|ui| {
-                    HabitTracker::change_cells_spacing(ui);
-                    self.dispaly_central_panel_cells(ui);
+                HabitTracker::overide_cells_spacing(ui);
+                ui.vertical(|ui| {
+                    for (raw_cells, day) in DAYS.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.add_sized(DAY_LABEL_SIZE, Label::new(*day));
+                            self.dispaly_central_panel_raw_cells(ui, raw_cells);
+                        });
+                    }
                 });
             });
         });
