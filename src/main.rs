@@ -3,6 +3,8 @@ use eframe::{
     Result,
 };
 
+use time::Date;
+
 // window parameters
 const WINDOW_SIZE: Vec2 = vec2(800., 400.);
 
@@ -13,8 +15,11 @@ const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 
 // centeral panel parameters
+const YEAR: u16 = 2026;
+const DAYS_OF_YEAR: u16 = 365;
+//const MONTHS: [&str, 12] = [];
 const DAYS: [&str; 7] = ["Sun", "Mon", "Tus", "Wed", "Thur", "Fri", "Sat"];
-const WEEKS: u16 = 52;
+const WEEKS: u8 = 52;
 const DAY_LABEL_SIZE: Vec2 = vec2(35., 15.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
 const CELL_SIZE: Vec2 = vec2(10., 10.);
@@ -29,26 +34,30 @@ struct HabitTracker {
 }
 
 #[derive(Debug, Clone)]
+// NOTE instead of storing cells by one raw of every day on overy month, on each month
+//store cells
 struct Habit {
     name: &'static str,
-    cells: Vec<Vec<Cell>>,
+    //cells: Vec<Vec<Cell>>,
+    cells: Vec<Cell>,
 }
 
 // NOTE thinking of not letting user manipulate cells to mark them only with a config file
+// TODO each cell attached to a year, mounth , day and day of the week
 #[derive(Clone, PartialEq, Debug)]
 struct Cell {
+    date: Date,
+    //day: Day,
     // if marked/clicked then green, else gray
     color: Color32,
 }
 
-// NOTE didn't understand the recurion thing here
-impl PartialEq for Habit {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self.name, other.name),
-            ("sport", "sport") | ("write", "write") | ("read", "read")
-        )
-    }
+#[derive(Default, Clone, PartialEq, Debug)]
+struct Day {
+    year: u16,
+    month: u8,
+    day: u8,
+    day_of_week: u8,
 }
 
 fn main() -> Result {
@@ -68,21 +77,42 @@ fn main() -> Result {
     Ok(())
 }
 
-impl HabitTracker {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // NOTE i've get 364 days
-        let mut cells: Vec<Vec<Cell>> = Vec::new();
-
-        for _day in DAYS {
-            let mut cells_raw: Vec<Cell> = Vec::new();
-            for _week in 0..WEEKS {
-                let cell = Cell {
-                    color: UNMARKED_CELL_COLOR,
-                };
-                cells_raw.push(cell);
-            }
-            cells.push(cells_raw);
+impl Cell {
+    // TODO i think i need day field as parameters here
+    fn new(day: u16) -> Self {
+        // SAFETY: 2026 has 365, so it's nover gonna panic
+        let date = Date::from_ordinal_date(YEAR.into(), day).unwrap();
+        //let day = Day::default();
+        Self {
+            date,
+            color: UNMARKED_CELL_COLOR,
         }
+    }
+}
+
+impl HabitTracker {
+    // TODO construct time metadata when constructing cells
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        // [[Cell;52];7] -> [[Cell;31,30];12], i think i can construte date without
+        //converting theme
+        //let mut cells: Vec<Vec<Cell>> = Vec::new();
+        let mut cells: Vec<Cell> = Vec::new();
+
+        // i think i need to store each day of the week days, it's tedius but i think
+        //it should work though
+        for day in 1..DAYS_OF_YEAR {
+            let cell = Cell::new(day);
+            cells.push(cell);
+        }
+
+        //for _day in DAYS {
+        //    let mut cells_raw: Vec<Cell> = Vec::new();
+        //    for _week in 0..WEEKS {
+        //        let cell = Cell::new();
+        //        cells_raw.push(cell);
+        //    }
+        //    cells.push(cells_raw);
+        //}
 
         let habit_1 = Habit {
             name: "reading",
@@ -144,19 +174,21 @@ impl HabitTracker {
     }
 
     // central panel
-    fn dispaly_central_panel_cells_raw(&mut self, ui: &mut Ui, cells_raw: usize) {
+
+    fn display_central_panel_cells(&mut self, ui: &mut Ui) {
         let habit_cells = self
             .habits
             .iter_mut()
             .find(|habit| habit.name == self.selected_habit);
 
         if let Some(habit) = habit_cells {
-            for cell in habit.cells[cells_raw].iter_mut() {
+            for cell in habit.cells.iter_mut() {
                 let (rect, response) =
                     ui.allocate_exact_size(CELL_SIZE, Sense::click());
                 ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
 
                 if response.clicked() {
+                    dbg!(&cell.date);
                     if cell.color == UNMARKED_CELL_COLOR {
                         cell.color = MARKED_CELL_COLOR;
                         ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
@@ -168,6 +200,32 @@ impl HabitTracker {
             }
         }
     }
+
+    //fn display_central_panel_cells_raw(&mut self, ui: &mut Ui, cells_raw: usize) {
+    //    let habit_cells = self
+    //        .habits
+    //        .iter_mut()
+    //        .find(|habit| habit.name == self.selected_habit);
+    //
+    //    if let Some(habit) = habit_cells {
+    //        for cell in habit.cells[cells_raw].iter_mut() {
+    //            let (rect, response) =
+    //                ui.allocate_exact_size(CELL_SIZE, Sense::click());
+    //            ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
+    //
+    //            if response.clicked() {
+    //                if cell.color == UNMARKED_CELL_COLOR {
+    //                    cell.color = MARKED_CELL_COLOR;
+    //                    ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
+    //                } else {
+    //                    cell.color = UNMARKED_CELL_COLOR;
+    //                    ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
+    //                }
+    //            }
+    //        }
+    //    }
+    //}
+
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
         let header = self.selected_habit;
         let label = RichText::new(header).size(HEADER_SIZE).strong();
@@ -229,18 +287,24 @@ impl eframe::App for HabitTracker {
                 HabitTracker::display_months_raw(ui);
             });
 
-            // TODO i want each mounth have it's own cells
             ui.scope(|ui| {
                 HabitTracker::overide_cells_spacing(ui);
-                ui.vertical(|ui| {
-                    for (cells_raw, day) in DAYS.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            HabitTracker::display_day_row(ui, *day);
-                            self.dispaly_central_panel_cells_raw(ui, cells_raw);
-                        });
-                    }
+                ui.horizontal_wrapped(|ui| {
+                    self.display_central_panel_cells(ui);
                 });
             });
+            // TODO i want each mounth have it's own cells
+            //ui.scope(|ui| {
+            //    HabitTracker::overide_cells_spacing(ui);
+            //    ui.vertical(|ui| {
+            //        for (cells_raw, day) in DAYS.iter().enumerate() {
+            //            ui.horizontal(|ui| {
+            //                HabitTracker::display_day_row(ui, *day);
+            //                self.dispaly_central_panel_cells_raw(ui, cells_raw);
+            //            });
+            //        }
+            //    });
+            //});
         });
     }
 }
