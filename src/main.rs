@@ -174,7 +174,6 @@ impl HabitTracker {
     }
 
     // central panel
-
     fn display_central_panel_cells(&mut self, ui: &mut Ui) {
         let habit_cells = self
             .habits
@@ -183,12 +182,13 @@ impl HabitTracker {
 
         if let Some(habit) = habit_cells {
             for cell in habit.cells.iter_mut() {
+                // NOTE maybe manipulate when to draw the cell from here, i get all
+                // the data for that cell
                 let (rect, response) =
                     ui.allocate_exact_size(CELL_SIZE, Sense::click());
                 ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
 
                 if response.clicked() {
-                    dbg!(&cell.date);
                     if cell.color == UNMARKED_CELL_COLOR {
                         cell.color = MARKED_CELL_COLOR;
                         ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
@@ -197,6 +197,10 @@ impl HabitTracker {
                         ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
                     }
                 }
+
+                // enable tooltip (movable tiny pop window when hovering on a cell)
+                let msg = format!("{} {}", &cell.date, &cell.date.weekday());
+                response.on_hover_text_at_pointer(msg);
             }
         }
     }
