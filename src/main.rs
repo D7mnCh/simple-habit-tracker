@@ -15,12 +15,11 @@ const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 
 // centeral panel parameters
-const YEAR: u16 = 2026;
+const YEAR: i32 = 2026;
 const DAYS_OF_YEAR: u16 = 365;
 //const MONTHS: [&str, 12] = [];
-const DAYS: [&str; 7] = ["Sun", "Mon", "Tus", "Wed", "Thur", "Fri", "Sat"];
-const WEEKS: u8 = 52;
-const DAY_LABEL_SIZE: Vec2 = vec2(35., 15.);
+const WEEK_DAYS: [&str; 7] = ["Sun", "Mon", "Tus", "Wed", "Thur", "Fri", "Sat"];
+const DAY_LABEL_SIZE: Vec2 = vec2(35., 0.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
 const CELL_SIZE: Vec2 = vec2(10., 10.);
 const CELL_RADIUS: f32 = 3.;
@@ -47,17 +46,8 @@ struct Habit {
 #[derive(Clone, PartialEq, Debug)]
 struct Cell {
     date: Date,
-    //day: Day,
     // if marked/clicked then green, else gray
     color: Color32,
-}
-
-#[derive(Default, Clone, PartialEq, Debug)]
-struct Day {
-    year: u16,
-    month: u8,
-    day: u8,
-    day_of_week: u8,
 }
 
 fn main() -> Result {
@@ -81,7 +71,7 @@ impl Cell {
     // TODO i think i need day field as parameters here
     fn new(day: u16) -> Self {
         // SAFETY: 2026 has 365, so it's nover gonna panic
-        let date = Date::from_ordinal_date(YEAR.into(), day).unwrap();
+        let date = Date::from_ordinal_date(YEAR, day).unwrap();
         //let day = Day::default();
         Self {
             date,
@@ -95,24 +85,14 @@ impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         // [[Cell;52];7] -> [[Cell;31,30];12], i think i can construte date without
         //converting theme
-        //let mut cells: Vec<Vec<Cell>> = Vec::new();
         let mut cells: Vec<Cell> = Vec::new();
 
         // i think i need to store each day of the week days, it's tedius but i think
         //it should work though
-        for day in 1..DAYS_OF_YEAR {
+        for day in 1..=DAYS_OF_YEAR {
             let cell = Cell::new(day);
             cells.push(cell);
         }
-
-        //for _day in DAYS {
-        //    let mut cells_raw: Vec<Cell> = Vec::new();
-        //    for _week in 0..WEEKS {
-        //        let cell = Cell::new();
-        //        cells_raw.push(cell);
-        //    }
-        //    cells.push(cells_raw);
-        //}
 
         let habit_1 = Habit {
             name: "reading",
@@ -174,61 +154,47 @@ impl HabitTracker {
     }
 
     // central panel
-    fn display_central_panel_cells(&mut self, ui: &mut Ui) {
-        let habit_cells = self
+    fn display_central_panel_cell(&mut self, ui: &mut Ui, curr_day_cell: usize) {
+        let selected_habit = self
             .habits
             .iter_mut()
             .find(|habit| habit.name == self.selected_habit);
 
-        if let Some(habit) = habit_cells {
-            for cell in habit.cells.iter_mut() {
-                // NOTE maybe manipulate when to draw the cell from here, i get all
-                // the data for that cell
-                let (rect, response) =
-                    ui.allocate_exact_size(CELL_SIZE, Sense::click());
-                ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
+        if let Some(habit) = selected_habit {
+            let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
+            ui.painter().rect_filled(
+                rect,
+                CELL_RADIUS,
+                habit.cells[curr_day_cell].color,
+            );
 
-                if response.clicked() {
-                    if cell.color == UNMARKED_CELL_COLOR {
-                        cell.color = MARKED_CELL_COLOR;
-                        ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
-                    } else {
-                        cell.color = UNMARKED_CELL_COLOR;
-                        ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
-                    }
+            if response.clicked() {
+                if habit.cells[curr_day_cell].color == UNMARKED_CELL_COLOR {
+                    habit.cells[curr_day_cell].color = MARKED_CELL_COLOR;
+                    ui.painter().rect_filled(
+                        rect,
+                        CELL_RADIUS,
+                        habit.cells[curr_day_cell].color,
+                    );
+                } else {
+                    habit.cells[curr_day_cell].color = UNMARKED_CELL_COLOR;
+                    ui.painter().rect_filled(
+                        rect,
+                        CELL_RADIUS,
+                        habit.cells[curr_day_cell].color,
+                    );
                 }
-
-                // enable tooltip (movable tiny pop window when hovering on a cell)
-                let msg = format!("{} {}", &cell.date, &cell.date.weekday());
-                response.on_hover_text_at_pointer(msg);
             }
+
+            // enable tooltip (movable tiny pop window when hovering on a cell)
+            let msg = format!(
+                "{} {}",
+                habit.cells[curr_day_cell].date,
+                habit.cells[curr_day_cell].date.weekday()
+            );
+            response.on_hover_text_at_pointer(msg);
         }
     }
-
-    //fn display_central_panel_cells_raw(&mut self, ui: &mut Ui, cells_raw: usize) {
-    //    let habit_cells = self
-    //        .habits
-    //        .iter_mut()
-    //        .find(|habit| habit.name == self.selected_habit);
-    //
-    //    if let Some(habit) = habit_cells {
-    //        for cell in habit.cells[cells_raw].iter_mut() {
-    //            let (rect, response) =
-    //                ui.allocate_exact_size(CELL_SIZE, Sense::click());
-    //            ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
-    //
-    //            if response.clicked() {
-    //                if cell.color == UNMARKED_CELL_COLOR {
-    //                    cell.color = MARKED_CELL_COLOR;
-    //                    ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
-    //                } else {
-    //                    cell.color = UNMARKED_CELL_COLOR;
-    //                    ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
-    //                }
-    //            }
-    //        }
-    //    }
-    //}
 
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
         let header = self.selected_habit;
@@ -237,7 +203,7 @@ impl HabitTracker {
         ui.heading(label);
     }
 
-    fn display_day_row(ui: &mut Ui, day: &str) {
+    fn display_week_days(ui: &mut Ui, day: &str) {
         ui.add_sized(DAY_LABEL_SIZE, Label::new(day));
     }
 
@@ -286,29 +252,31 @@ impl eframe::App for HabitTracker {
 
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
-            self.display_centeral_panel_header(ui);
-            ui.horizontal(|ui| {
-                HabitTracker::display_months_raw(ui);
-            });
+            ui.vertical(|ui| {
+                self.display_centeral_panel_header(ui);
 
-            ui.scope(|ui| {
-                HabitTracker::overide_cells_spacing(ui);
-                ui.horizontal_wrapped(|ui| {
-                    self.display_central_panel_cells(ui);
+                ui.horizontal(|ui| {
+                    HabitTracker::display_months_raw(ui);
+                });
+
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        for day in WEEK_DAYS {
+                            HabitTracker::display_week_days(ui, day);
+                        }
+                    });
+
+                    ui.horizontal_wrapped(|ui| {
+                        ui.scope(|ui| {
+                            HabitTracker::overide_cells_spacing(ui);
+                            // NOTE i will guess your allocation logic goes here
+                            for day in 0..DAYS_OF_YEAR {
+                                self.display_central_panel_cell(ui, day.into());
+                            }
+                        });
+                    });
                 });
             });
-            // TODO i want each mounth have it's own cells
-            //ui.scope(|ui| {
-            //    HabitTracker::overide_cells_spacing(ui);
-            //    ui.vertical(|ui| {
-            //        for (cells_raw, day) in DAYS.iter().enumerate() {
-            //            ui.horizontal(|ui| {
-            //                HabitTracker::display_day_row(ui, *day);
-            //                self.dispaly_central_panel_cells_raw(ui, cells_raw);
-            //            });
-            //        }
-            //    });
-            //});
         });
     }
 }
