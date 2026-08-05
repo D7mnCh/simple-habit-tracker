@@ -2,11 +2,14 @@ use eframe::{
     egui::{self, vec2, Color32, Label, RichText, Sense, Ui, Vec2},
     Result,
 };
-
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
+use std::fs::{read_to_string, write};
+use std::io::Result;
 use time::Date;
 
 // window parameters
-const WINDOW_SIZE: Vec2 = vec2(800., 400.);
+const WINDOW_SIZE: Vec2 = vec2(825., 400.);
 
 // left panel parameters
 const LEFT_PANEL_SIZE: f32 = 100.;
@@ -17,11 +20,14 @@ const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
 // centeral panel parameters
 const YEAR: i32 = 2026;
 const DAYS_OF_YEAR: u16 = 365;
-//const MONTHS: [&str, 12] = [];
-const WEEK_DAYS: [&str; 7] = ["Sun", "Mon", "Tus", "Wed", "Thur", "Fri", "Sat"];
+const WEEK_DAYS: [&str; 7] = ["Thur", "Fri", "Sat", "Sun", "Mon", "Tus", "Wed"];
+const MONTHS: [&str; 12] = [
+    "Jan", "Fab", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+    "Dec",
+];
 const DAY_LABEL_SIZE: Vec2 = vec2(35., 0.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
-const CELL_SIZE: Vec2 = vec2(10., 10.);
+const CELL_SIZE: Vec2 = vec2(10.5, 10.5);
 const CELL_RADIUS: f32 = 3.;
 const UNMARKED_CELL_COLOR: Color32 = Color32::from_gray(40);
 const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(0, 109, 50);
@@ -33,16 +39,12 @@ struct HabitTracker {
 }
 
 #[derive(Debug, Clone)]
-// NOTE instead of storing cells by one raw of every day on overy month, on each month
-//store cells
 struct Habit {
     name: &'static str,
     //cells: Vec<Vec<Cell>>,
     cells: Vec<Cell>,
 }
 
-// NOTE thinking of not letting user manipulate cells to mark them only with a config file
-// TODO each cell attached to a year, mounth , day and day of the week
 #[derive(Clone, PartialEq, Debug)]
 struct Cell {
     date: Date,
@@ -67,12 +69,17 @@ fn main() -> Result {
     Ok(())
 }
 
+pub fn load_tracker(file: &str) -> Result<()> {
+    todo!();
+    Ok(())
+}
+
+pub fn save_tracker() {}
+
 impl Cell {
-    // TODO i think i need day field as parameters here
     fn new(day: u16) -> Self {
         // SAFETY: 2026 has 365, so it's nover gonna panic
         let date = Date::from_ordinal_date(YEAR, day).unwrap();
-        //let day = Day::default();
         Self {
             date,
             color: UNMARKED_CELL_COLOR,
@@ -81,14 +88,9 @@ impl Cell {
 }
 
 impl HabitTracker {
-    // TODO construct time metadata when constructing cells
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // [[Cell;52];7] -> [[Cell;31,30];12], i think i can construte date without
-        //converting theme
         let mut cells: Vec<Cell> = Vec::new();
 
-        // i think i need to store each day of the week days, it's tedius but i think
-        //it should work though
         for day in 1..=DAYS_OF_YEAR {
             let cell = Cell::new(day);
             cells.push(cell);
@@ -203,33 +205,36 @@ impl HabitTracker {
         ui.heading(label);
     }
 
-    fn display_week_days(ui: &mut Ui, day: &str) {
-        ui.add_sized(DAY_LABEL_SIZE, Label::new(day));
+    fn display_week_day(ui: &mut Ui, day: &str) {
+        let day_msg = RichText::new(day).size(10.15);
+        ui.add_sized(DAY_LABEL_SIZE, Label::new(day_msg));
     }
 
     fn display_months_raw(ui: &mut Ui) {
-        ui.add_space(40.);
-        ui.label("Jan");
+        ui.add_space(43.);
+        ui.label(MONTHS[0]);
         ui.add_space(30.);
-        ui.label("Feb");
-        ui.add_space(30.);
-        ui.label("Mar");
-        ui.add_space(30.);
-        ui.label("Apr");
-        ui.add_space(30.);
-        ui.label("May");
-        ui.add_space(30.);
-        ui.label("Jun");
-        ui.add_space(30.);
-        ui.label("Jul");
-        ui.add_space(30.);
-        ui.label("Aug");
-        ui.add_space(30.);
-        ui.label("Sep");
-        ui.add_space(30.);
-        ui.label("Nov");
-        ui.add_space(30.);
-        ui.label("Dec");
+        ui.label(MONTHS[1]);
+        ui.add_space(20.);
+        ui.label(MONTHS[2]);
+        ui.add_space(24.);
+        ui.label(MONTHS[3]);
+        ui.add_space(22.);
+        ui.label(MONTHS[4]);
+        ui.add_space(25.);
+        ui.label(MONTHS[5]);
+        ui.add_space(25.);
+        ui.label(MONTHS[6]);
+        ui.add_space(25.);
+        ui.label(MONTHS[7]);
+        ui.add_space(25.);
+        ui.label(MONTHS[8]);
+        ui.add_space(25.);
+        ui.label(MONTHS[9]);
+        ui.add_space(25.);
+        ui.label(MONTHS[10]);
+        ui.add_space(25.);
+        ui.label(MONTHS[11]);
     }
 }
 
@@ -262,16 +267,38 @@ impl eframe::App for HabitTracker {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         for day in WEEK_DAYS {
-                            HabitTracker::display_week_days(ui, day);
+                            HabitTracker::display_week_day(ui, day);
                         }
                     });
 
-                    ui.horizontal_wrapped(|ui| {
+                    ui.vertical(|ui| {
                         ui.scope(|ui| {
                             HabitTracker::overide_cells_spacing(ui);
-                            // NOTE i will guess your allocation logic goes here
-                            for day in 0..DAYS_OF_YEAR {
-                                self.display_central_panel_cell(ui, day.into());
+                            for (week_day_indx, week_day) in
+                                WEEK_DAYS.iter().enumerate()
+                            {
+                                ui.horizontal(|ui| {
+                                    for week in 0..52 {
+                                        // each cell in each column is week * 7, add it with
+                                        //week_day_indx cuz notice +1 added in each
+                                        //raw starting from adding 0
+                                        let cell_indx = week * 7 + week_day_indx;
+                                        // NOTE i will guess your allocation logic goes here
+                                        self.display_central_panel_cell(
+                                            ui, cell_indx,
+                                        );
+
+                                        // adding last cell cuz 52 * 7 = 364 of total
+                                        //cells were displayed
+                                        if *week_day == "Thur" && week == 51 {
+                                            const LAST_CELL_INDX: usize = 364;
+                                            self.display_central_panel_cell(
+                                                ui,
+                                                LAST_CELL_INDX,
+                                            );
+                                        }
+                                    }
+                                });
                             }
                         });
                     });
