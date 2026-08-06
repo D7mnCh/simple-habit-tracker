@@ -3,9 +3,9 @@ use eframe::{
     Result,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
+use serde_json::Result as ResultJson;
 use std::fs::{read_to_string, write};
-use std::io::Result;
+use std::io::Result as ResultIo;
 use time::Date;
 
 // window parameters
@@ -32,24 +32,23 @@ const CELL_RADIUS: f32 = 3.;
 const UNMARKED_CELL_COLOR: Color32 = Color32::from_gray(40);
 const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(0, 109, 50);
 
+#[derive(Deserialize, Serialize)]
 struct HabitTracker {
     habits: Vec<Habit>,
     // neeced for building habit selecter widget
     selected_habit: &'static str,
 }
-
-#[derive(Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct Habit {
     name: &'static str,
-    //cells: Vec<Vec<Cell>>,
     cells: Vec<Cell>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 struct Cell {
     date: Date,
     // if marked/clicked then green, else gray
-    color: Color32,
+    marked: bool,
 }
 
 fn main() -> Result {
@@ -69,7 +68,7 @@ fn main() -> Result {
     Ok(())
 }
 
-pub fn load_tracker(file: &str) -> Result<()> {
+pub fn load_tracker(file: &str) -> ResultIo<()> {
     todo!();
     Ok(())
 }
@@ -82,11 +81,12 @@ impl Cell {
         let date = Date::from_ordinal_date(YEAR, day).unwrap();
         Self {
             date,
-            color: UNMARKED_CELL_COLOR,
+            marked: false,
         }
     }
 }
 
+// NOTE construction from json from here
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let mut cells: Vec<Cell> = Vec::new();
@@ -164,27 +164,22 @@ impl HabitTracker {
 
         if let Some(habit) = selected_habit {
             let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
-            ui.painter().rect_filled(
-                rect,
-                CELL_RADIUS,
-                habit.cells[curr_day_cell].color,
-            );
+            let current_cell_color = match habit.cells[curr_day_cell].marked {
+                true => MARKED_CELL_COLOR,
+                false => UNMARKED_CELL_COLOR,
+            };
+            ui.painter()
+                .rect_filled(rect, CELL_RADIUS, current_cell_color);
 
             if response.clicked() {
-                if habit.cells[curr_day_cell].color == UNMARKED_CELL_COLOR {
-                    habit.cells[curr_day_cell].color = MARKED_CELL_COLOR;
-                    ui.painter().rect_filled(
-                        rect,
-                        CELL_RADIUS,
-                        habit.cells[curr_day_cell].color,
-                    );
+                if !habit.cells[curr_day_cell].marked {
+                    habit.cells[curr_day_cell].marked = true;
+                    ui.painter()
+                        .rect_filled(rect, CELL_RADIUS, MARKED_CELL_COLOR);
                 } else {
-                    habit.cells[curr_day_cell].color = UNMARKED_CELL_COLOR;
-                    ui.painter().rect_filled(
-                        rect,
-                        CELL_RADIUS,
-                        habit.cells[curr_day_cell].color,
-                    );
+                    habit.cells[curr_day_cell].marked = false;
+                    ui.painter()
+                        .rect_filled(rect, CELL_RADIUS, UNMARKED_CELL_COLOR);
                 }
             }
 
