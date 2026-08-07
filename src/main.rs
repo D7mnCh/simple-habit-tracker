@@ -3,9 +3,12 @@ use eframe::{
     Result,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Result as ResultJson;
-use std::fs::{read_to_string, write};
-use std::io::Result as ResultIo;
+use serde_json::Result as ResultSerdeJson;
+use std::io::{self, Result as ResultIo};
+use std::{
+    fs::{self, File},
+    path::Path,
+};
 use time::Date;
 
 // window parameters
@@ -32,22 +35,24 @@ const CELL_RADIUS: f32 = 3.;
 const UNMARKED_CELL_COLOR: Color32 = Color32::from_gray(40);
 const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(0, 109, 50);
 
-#[derive(Deserialize, Serialize)]
+// I/O
+const TRACKER_FILE: &str = "save.json";
+
+#[derive(Debug, Deserialize, Serialize)]
 struct HabitTracker {
     habits: Vec<Habit>,
     // neeced for building habit selecter widget
-    selected_habit: &'static str,
+    selected_habit: String,
 }
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Habit {
-    name: &'static str,
+    name: String,
     cells: Vec<Cell>,
 }
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 struct Cell {
     date: Date,
-    // if marked/clicked then green, else gray
     marked: bool,
 }
 
@@ -68,13 +73,6 @@ fn main() -> Result {
     Ok(())
 }
 
-pub fn load_tracker(file: &str) -> ResultIo<()> {
-    todo!();
-    Ok(())
-}
-
-pub fn save_tracker() {}
-
 impl Cell {
     fn new(day: u16) -> Self {
         // SAFETY: 2026 has 365, so it's nover gonna panic
@@ -86,34 +84,70 @@ impl Cell {
     }
 }
 
-// NOTE construction from json from here
+// NOTE load json here
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let mut cells: Vec<Cell> = Vec::new();
-
         for day in 1..=DAYS_OF_YEAR {
             let cell = Cell::new(day);
             cells.push(cell);
         }
 
         let habit_1 = Habit {
-            name: "reading",
+            name: "reading".to_owned(),
             cells: cells.clone(),
         };
         let habit_2 = Habit {
-            name: "sport",
+            name: "sport".to_owned(),
             cells: cells.clone(),
         };
         let habit_3 = Habit {
-            name: "writing",
+            name: "writing".to_owned(),
             cells: cells.clone(),
         };
         let habits = vec![habit_1.clone(), habit_2, habit_3];
 
-        Self {
+        let habit_tracker = Self {
             habits,
             selected_habit: habit_1.name,
+        };
+
+        HabitTracker::check_file(&habit_tracker);
+        let habit_tracker = HabitTracker::load();
+
+        habit_tracker
+    }
+
+    fn check_file(habit_tracker: &HabitTracker) {
+        // check tracker file
+        if !Path::new(TRACKER_FILE).exists() {
+            let _ = File::create(TRACKER_FILE).unwrap();
+            habit_tracker.save();
         }
+
+        // TODO if file exists and it's empty then delete theat file and create
+        //new one with default settings
+        let file = fs::metadata(TRACKER_FILE).unwrap();
+        if Path::new(TRACKER_FILE).exists() && file.len() == 0 {
+            fs::remove_file(TRACKER_FILE).unwrap();
+            let _ = File::create(TRACKER_FILE).unwrap();
+            habit_tracker.save();
+        }
+    }
+
+    // Deseialize
+    fn load() -> HabitTracker {
+        let file = fs::read_to_string(TRACKER_FILE).unwrap();
+        let habit_tracker: HabitTracker =
+            serde_json::from_str(file.as_str()).unwrap();
+
+        habit_tracker
+    }
+
+    // Serialize
+    fn save(&self) {
+        let json = serde_json::to_string(self).unwrap();
+        let _ = fs::write(TRACKER_FILE, json);
     }
 }
 
@@ -146,10 +180,10 @@ impl HabitTracker {
     fn dispaly_left_panel_widgets(&mut self, ui: &mut Ui) {
         for habit in self.habits.iter() {
             let habit_label =
-                RichText::new(habit.name).size(LEFT_PANEL_HABIT_TEXT_SIZE);
+                RichText::new(habit.name.clone()).size(LEFT_PANEL_HABIT_TEXT_SIZE);
             let _response = ui.selectable_value(
                 &mut self.selected_habit,
-                habit.name,
+                habit.name.clone(),
                 habit_label,
             );
         }
@@ -191,10 +225,12 @@ impl HabitTracker {
             );
             response.on_hover_text_at_pointer(msg);
         }
+
+        self.save();
     }
 
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
-        let header = self.selected_habit;
+        let header = self.selected_habit.clone();
         let label = RichText::new(header).size(HEADER_SIZE).strong();
 
         ui.heading(label);
@@ -278,7 +314,6 @@ impl eframe::App for HabitTracker {
                                         //week_day_indx cuz notice +1 added in each
                                         //raw starting from adding 0
                                         let cell_indx = week * 7 + week_day_indx;
-                                        // NOTE i will guess your allocation logic goes here
                                         self.display_central_panel_cell(
                                             ui, cell_indx,
                                         );
