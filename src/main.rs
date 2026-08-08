@@ -18,7 +18,7 @@ const WINDOW_SIZE: Vec2 = vec2(825., 400.);
 const LEFT_PANEL_SIZE: f32 = 100.;
 const HEADER_SIZE: f32 = 25.;
 const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
-const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 20.;
+const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 12.;
 
 // centeral panel parameters
 const YEAR: i32 = 2026;
@@ -42,16 +42,21 @@ const TRACKER_FILE: &str = "save.json";
 struct HabitTracker {
     habits: Vec<Habit>,
     // neeced for building habit selecter widget
+    // used String instead of &'static str for serde issues
     selected_habit: String,
 }
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Habit {
+    // used String instead of &'static str cuz of serde issue thing
     name: String,
     cells: Vec<Cell>,
 }
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 struct Cell {
+    // TODO make date [Option<Date>;DAY_OF_YEAR], Optinon needed for construction
+    // i could make Option Vec<Cell>, but Option is just needed for Date cuz it doesn't
+    //have Default trait
     date: Date,
     marked: bool,
 }
@@ -84,9 +89,11 @@ impl Cell {
     }
 }
 
-// NOTE load json here
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        // TODO you should construct empty array/vec, cuz i'll get habits data from
+        //file, this program only add to that file,if false then i'll modify that file
+        //every time i lunch the app wapping out the saving
         let mut cells: Vec<Cell> = Vec::new();
         for day in 1..=DAYS_OF_YEAR {
             let cell = Cell::new(day);
@@ -107,36 +114,31 @@ impl HabitTracker {
         };
         let habits = vec![habit_1.clone(), habit_2, habit_3];
 
+        // TODO i wanna remove shadowing here, it's wierd
         let habit_tracker = Self {
             habits,
             selected_habit: habit_1.name,
         };
 
         HabitTracker::check_file(&habit_tracker);
-        let habit_tracker = HabitTracker::load();
+        let habit_tracker = HabitTracker::load_file();
 
         habit_tracker
     }
 
     fn check_file(habit_tracker: &HabitTracker) {
-        // check tracker file
         if !Path::new(TRACKER_FILE).exists() {
             let _ = File::create(TRACKER_FILE).unwrap();
-            habit_tracker.save();
         }
 
-        // TODO if file exists and it's empty then delete theat file and create
-        //new one with default settings
         let file = fs::metadata(TRACKER_FILE).unwrap();
-        if Path::new(TRACKER_FILE).exists() && file.len() == 0 {
-            fs::remove_file(TRACKER_FILE).unwrap();
-            let _ = File::create(TRACKER_FILE).unwrap();
-            habit_tracker.save();
+        if file.len() == 0 {
+            HabitTracker::save_file(&habit_tracker);
         }
     }
 
-    // Deseialize
-    fn load() -> HabitTracker {
+    // Desirialize
+    fn load_file() -> HabitTracker {
         let file = fs::read_to_string(TRACKER_FILE).unwrap();
         let habit_tracker: HabitTracker =
             serde_json::from_str(file.as_str()).unwrap();
@@ -145,7 +147,9 @@ impl HabitTracker {
     }
 
     // Serialize
-    fn save(&self) {
+    fn save_file(&self) {
+        // doing to_string_pretty() slow the app
+        //let json = serde_json::to_string_pretty(self).unwrap();
         let json = serde_json::to_string(self).unwrap();
         let _ = fs::write(TRACKER_FILE, json);
     }
@@ -191,6 +195,8 @@ impl HabitTracker {
 
     // central panel
     fn display_central_panel_cell(&mut self, ui: &mut Ui, curr_day_cell: usize) {
+        // display only selected habit, ignore the others (pefromance)
+        // search the selected habit to get habit from it (for cells)
         let selected_habit = self
             .habits
             .iter_mut()
@@ -226,7 +232,10 @@ impl HabitTracker {
             response.on_hover_text_at_pointer(msg);
         }
 
-        self.save();
+        // NOTE self.save_file() get called 60 times per sec
+        // TODO invoke it only when response.clicked() == true (i can't for now due
+        //to mut borrow and borrow at same scope)
+        self.save_file();
     }
 
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
