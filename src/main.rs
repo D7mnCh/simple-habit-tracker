@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{self, vec2, Color32, Label, RichText, Sense, Ui, Vec2},
+    egui::{self, vec2, Color32, Label, RichText, Sense, Ui, Vec2, Window},
     Result,
 };
 use serde::{Deserialize, Serialize};
@@ -42,12 +42,13 @@ const TRACKER_FILE: &str = "save.json";
 struct HabitTracker {
     habits: Vec<Habit>,
     // neeced for building habit selecter widget
-    // used String instead of &'static str for serde issues
+    // used String instead of &'static str for serde derive issues
+    open_inner_window: bool,
     selected_habit: String,
 }
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Habit {
-    // used String instead of &'static str cuz of serde issue thing
+    // used String instead of &'static str cuz of serde derive issue thing
     name: String,
     cells: Vec<Cell>,
 }
@@ -90,7 +91,7 @@ impl Cell {
 }
 
 impl HabitTracker {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // TODO you should construct empty array/vec, cuz i'll get habits data from
         //file, this program only add to that file,if false then i'll modify that file
         //every time i lunch the app wapping out the saving
@@ -116,6 +117,7 @@ impl HabitTracker {
 
         // TODO i wanna remove shadowing here, it's wierd
         let habit_tracker = Self {
+            open_inner_window: false,
             habits,
             selected_habit: habit_1.name,
         };
@@ -191,6 +193,22 @@ impl HabitTracker {
                 habit_label,
             );
         }
+    }
+
+    fn display_buttton_add_habit(&mut self, ui: &mut Ui) {
+        if ui.button("add").clicked() {
+            // TODO add close button on the window, don't toggle
+            self.open_inner_window = true;
+        }
+    }
+    fn display_buttton_delete_habit(&mut self, ui: &mut Ui) {
+        if ui.button("delete").clicked() {
+            // TODO
+        }
+    }
+
+    fn display_inner_window_content(&mut self, ui: &mut Ui) {
+        //
     }
 
     // central panel
@@ -286,14 +304,32 @@ impl eframe::App for HabitTracker {
             .resizable(false)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
-                HabitTracker::display_left_panel_header(ui);
+                ui.vertical(|ui| {
+                    HabitTracker::display_left_panel_header(ui);
 
-                ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
+                    ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
 
-                ui.vertical_centered_justified(|ui| {
-                    self.dispaly_left_panel_widgets(ui);
-                })
+                    ui.vertical_centered_justified(|ui| {
+                        self.dispaly_left_panel_widgets(ui);
+                    });
+                    ui.with_layout(
+                        egui::Layout::left_to_right(egui::Align::BOTTOM),
+                        |ui| {
+                            self.display_buttton_add_habit(ui);
+                            self.display_buttton_delete_habit(ui);
+                        },
+                    );
+                });
             });
+
+        if self.open_inner_window {
+            egui::Window::new("My Window")
+                // ERROR closuer need unique access (no borrowing before) to self
+                .open(&mut self.open_inner_window)
+                .show(ui.ctx(), |ui| {
+                    self.display_inner_window_content(ui);
+                });
+        }
 
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
