@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{self, vec2, Color32, Label, RichText, Sense, Ui, Vec2, Window},
+    egui::{self, vec2, Color32, Key, Label, RichText, Sense, Ui, Vec2, Window},
     Result,
 };
 use serde::{Deserialize, Serialize};
@@ -43,9 +43,15 @@ struct HabitTracker {
     habits: Vec<Habit>,
     // neeced for building habit selecter widget
     // used String instead of &'static str for serde derive issues
-    open_inner_window: bool,
+    float_window: FloatWindow,
     selected_habit: String,
 }
+#[derive(Debug, Deserialize, Serialize)]
+struct FloatWindow {
+    open: bool,
+    add_habit_name: String,
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Habit {
     // used String instead of &'static str cuz of serde derive issue thing
@@ -79,6 +85,24 @@ fn main() -> Result {
     Ok(())
 }
 
+impl FloatWindow {
+    fn new() -> Self {
+        Self {
+            open: false,
+            add_habit_name: String::new(),
+        }
+    }
+    fn reset_add_habit_name(&mut self) {
+        self.add_habit_name = String::new();
+    }
+}
+
+impl Habit {
+    fn new(name: String, cells: Vec<Cell>) -> Habit {
+        Self { name, cells }
+    }
+}
+
 impl Cell {
     fn new(day: u16) -> Self {
         // SAFETY: 2026 has 365, so it's nover gonna panic
@@ -88,10 +112,8 @@ impl Cell {
             marked: false,
         }
     }
-}
 
-impl HabitTracker {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn gen_cells_with_date() -> Vec<Cell> {
         // TODO you should construct empty array/vec, cuz i'll get habits data from
         //file, this program only add to that file,if false then i'll modify that file
         //every time i lunch the app wapping out the saving
@@ -100,6 +122,14 @@ impl HabitTracker {
             let cell = Cell::new(day);
             cells.push(cell);
         }
+
+        cells
+    }
+}
+
+impl HabitTracker {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let cells = Cell::gen_cells_with_date();
 
         let habit_1 = Habit {
             name: "reading".to_owned(),
@@ -117,7 +147,7 @@ impl HabitTracker {
 
         // TODO i wanna remove shadowing here, it's wierd
         let habit_tracker = Self {
-            open_inner_window: false,
+            float_window: FloatWindow::new(),
             habits,
             selected_habit: habit_1.name,
         };
@@ -197,8 +227,7 @@ impl HabitTracker {
 
     fn display_buttton_add_habit(&mut self, ui: &mut Ui) {
         if ui.button("add").clicked() {
-            // TODO add close button on the window, don't toggle
-            self.open_inner_window = true;
+            self.float_window.open = true;
         }
     }
     fn display_buttton_delete_habit(&mut self, ui: &mut Ui) {
@@ -207,8 +236,21 @@ impl HabitTracker {
         }
     }
 
-    fn display_inner_window_content(&mut self, ui: &mut Ui) {
-        //
+    fn display_float_window_content(&mut self, ui: &mut Ui) {
+        let response =
+            ui.text_edit_singleline(&mut self.float_window.add_habit_name);
+        if response.lost_focus()
+            && ui.input(|i| i.key_pressed(Key::Enter))
+            && self.float_window.add_habit_name.len() != 0
+        {
+            let cells = Cell::gen_cells_with_date();
+            let habit = Habit::new(self.float_window.add_habit_name.clone(), cells);
+            self.habits.push(habit);
+
+            HabitTracker::save_file(&self);
+
+            self.float_window.reset_add_habit_name();
+        }
     }
 
     // central panel
@@ -322,13 +364,16 @@ impl eframe::App for HabitTracker {
                 });
             });
 
-        if self.open_inner_window {
+        if self.float_window.open {
+            // create open instance to satisfy borrow checker (closure unique access to self)
+            let mut open = self.float_window.open;
             egui::Window::new("My Window")
                 // ERROR closuer need unique access (no borrowing before) to self
-                .open(&mut self.open_inner_window)
+                .open(&mut open)
                 .show(ui.ctx(), |ui| {
-                    self.display_inner_window_content(ui);
+                    self.display_float_window_content(ui);
                 });
+            self.float_window.open = open;
         }
 
         // Centeral Panel
