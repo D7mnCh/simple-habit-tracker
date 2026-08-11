@@ -1,5 +1,7 @@
 use eframe::{
-    egui::{self, vec2, Color32, Key, Label, RichText, Sense, Ui, Vec2, Window},
+    egui::{
+        self, vec2, Color32, Key, Label, Rgba, RichText, Sense, Ui, Vec2, Window,
+    },
     Result,
 };
 use serde::{Deserialize, Serialize};
@@ -32,8 +34,10 @@ const DAY_LABEL_SIZE: Vec2 = vec2(35., 0.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
 const CELL_SIZE: Vec2 = vec2(10.5, 10.5);
 const CELL_RADIUS: f32 = 3.;
-const UNMARKED_CELL_COLOR: Color32 = Color32::from_gray(40);
-const MARKED_CELL_COLOR: Color32 = Color32::from_rgb(0, 109, 50);
+// NOTE colors are not working
+const MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.001, 0.102, 0.023);
+const UNMARKED_CELL_COLOR: Rgba = Rgba::from_gray(0.040);
+const HALF_MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.201, 0.098, 0.002);
 
 // I/O
 const TRACKER_FILE: &str = "save.json";
@@ -41,9 +45,9 @@ const TRACKER_FILE: &str = "save.json";
 #[derive(Debug, Deserialize, Serialize)]
 struct HabitTracker {
     habits: Vec<Habit>,
+    float_window: FloatWindow,
     // neeced for building habit selecter widget
     // used String instead of &'static str for serde derive issues
-    float_window: FloatWindow,
     selected_habit: String,
 }
 #[derive(Debug, Deserialize, Serialize)]
@@ -65,7 +69,7 @@ struct Cell {
     // i could make Option Vec<Cell>, but Option is just needed for Date cuz it doesn't
     //have Default trait
     date: Date,
-    marked: bool,
+    color: Rgba,
 }
 
 fn main() -> Result {
@@ -109,7 +113,7 @@ impl Cell {
         let date = Date::from_ordinal_date(YEAR, day).unwrap();
         Self {
             date,
-            marked: false,
+            color: UNMARKED_CELL_COLOR,
         }
     }
 
@@ -264,23 +268,25 @@ impl HabitTracker {
 
         if let Some(habit) = selected_habit {
             let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
-            let current_cell_color = match habit.cells[curr_day_cell].marked {
-                true => MARKED_CELL_COLOR,
-                false => UNMARKED_CELL_COLOR,
-            };
-            ui.painter()
-                .rect_filled(rect, CELL_RADIUS, current_cell_color);
+            ui.painter().rect_filled(
+                rect,
+                CELL_RADIUS,
+                habit.cells[curr_day_cell].color,
+            );
 
             if response.clicked() {
-                if !habit.cells[curr_day_cell].marked {
-                    habit.cells[curr_day_cell].marked = true;
-                    ui.painter()
-                        .rect_filled(rect, CELL_RADIUS, MARKED_CELL_COLOR);
-                } else {
-                    habit.cells[curr_day_cell].marked = false;
-                    ui.painter()
-                        .rect_filled(rect, CELL_RADIUS, UNMARKED_CELL_COLOR);
-                }
+                habit.cells[curr_day_cell].color =
+                    match habit.cells[curr_day_cell].color {
+                        UNMARKED_CELL_COLOR => HALF_MARKED_CELL_COLOR,
+                        MARKED_CELL_COLOR => UNMARKED_CELL_COLOR,
+                        HALF_MARKED_CELL_COLOR => MARKED_CELL_COLOR,
+                        e => unreachable!("{:?}", e),
+                    };
+                ui.painter().rect_filled(
+                    rect,
+                    CELL_RADIUS,
+                    habit.cells[curr_day_cell].color,
+                );
             }
 
             // enable tooltip (movable tiny pop window when hovering on a cell)
