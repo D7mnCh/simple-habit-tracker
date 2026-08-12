@@ -50,10 +50,17 @@ struct HabitTracker {
     // used String instead of &'static str for serde derive issues
     selected_habit: String,
 }
-#[derive(Debug, Deserialize, Serialize)]
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct FloatWindow {
-    open: bool,
-    add_habit_name: String,
+    name: String,
+    state: Option<FloatWindowState>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+enum FloatWindowState {
+    AddHabit(String),
+    DeleteHabit(String),
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -90,14 +97,11 @@ fn main() -> Result {
 }
 
 impl FloatWindow {
-    fn new() -> Self {
-        Self {
-            open: false,
-            add_habit_name: String::new(),
-        }
-    }
     fn reset_add_habit_name(&mut self) {
-        self.add_habit_name = String::new();
+        match &mut self.state {
+            Some(FloatWindowState::AddHabit(name)) => *name = String::new(),
+            _ => unreachable!("caller should only call this method when FloatWindowState is AddHabit "),
+        }
     }
 }
 
@@ -135,25 +139,21 @@ impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let cells = Cell::gen_cells_with_date();
 
-        let habit_1 = Habit {
-            name: "reading".to_owned(),
-            cells: cells.clone(),
-        };
-        let habit_2 = Habit {
-            name: "sport".to_owned(),
-            cells: cells.clone(),
-        };
-        let habit_3 = Habit {
-            name: "writing".to_owned(),
-            cells: cells.clone(),
-        };
-        let habits = vec![habit_1.clone(), habit_2, habit_3];
+        //let habit_1 = Habit {
+        //    name: "reading".to_owned(),
+        //    cells: cells.clone(),
+        //};
+        //
+        //let habits = vec![habit_1.clone()];
 
         // TODO i wanna remove shadowing here, it's wierd
         let habit_tracker = Self {
-            float_window: FloatWindow::new(),
-            habits,
-            selected_habit: habit_1.name,
+            float_window: FloatWindow {
+                name: String::new(),
+                state: None,
+            },
+            habits: Vec::new(),
+            selected_habit: String::new(),
         };
 
         HabitTracker::check_file(&habit_tracker);
@@ -231,29 +231,65 @@ impl HabitTracker {
 
     fn display_buttton_add_habit(&mut self, ui: &mut Ui) {
         if ui.button("add").clicked() {
-            self.float_window.open = true;
+            self.float_window.state =
+                Some(FloatWindowState::AddHabit(String::new()));
+            self.float_window.name = String::from("add habit")
         }
     }
+
     fn display_buttton_delete_habit(&mut self, ui: &mut Ui) {
         if ui.button("delete").clicked() {
-            // TODO
+            self.float_window.state =
+                Some(FloatWindowState::DeleteHabit(String::new()));
+            self.float_window.name = String::from("delete habit")
         }
     }
 
     fn display_float_window_content(&mut self, ui: &mut Ui) {
-        let response =
-            ui.text_edit_singleline(&mut self.float_window.add_habit_name);
-        if response.lost_focus()
-            && ui.input(|i| i.key_pressed(Key::Enter))
-            && self.float_window.add_habit_name.len() != 0
-        {
-            let cells = Cell::gen_cells_with_date();
-            let habit = Habit::new(self.float_window.add_habit_name.clone(), cells);
-            self.habits.push(habit);
+        match &mut self.float_window.state {
+            Some(FloatWindowState::AddHabit(name)) => {
+                let response = ui.text_edit_singleline(name);
 
-            HabitTracker::save_file(&self);
+                if response.lost_focus()
+                    && ui.input(|i| i.key_pressed(Key::Enter))
+                    && name.len() != 0
+                {
+                    let cells = Cell::gen_cells_with_date();
+                    let habit = Habit::new(name.clone(), cells);
+                    self.habits.push(habit);
 
-            self.float_window.reset_add_habit_name();
+                    HabitTracker::save_file(&self);
+
+                    self.float_window.reset_add_habit_name();
+                }
+            }
+
+            // TODO centeralize selected habits on the floated window
+            Some(FloatWindowState::DeleteHabit(selected_habit_delete)) => {
+                ui.vertical_centered(|ui| {
+                    for habit in self.habits.iter() {
+                        let habit_label = RichText::new(habit.name.clone())
+                            .size(LEFT_PANEL_HABIT_TEXT_SIZE);
+                        let _response = ui.selectable_value(
+                            selected_habit_delete,
+                            habit.name.clone(),
+                            habit_label,
+                        );
+                    }
+
+                    if ui.input(|i| i.key_pressed(Key::Enter)) {
+                        if let Some(selected_habit_indx) = self
+                            .habits
+                            .iter_mut()
+                            .position(|habit| habit.name == *selected_habit_delete)
+                        {
+                            let _ = self.habits.remove(selected_habit_indx);
+                        }
+                    }
+                });
+            }
+
+            None => {}
         }
     }
 
@@ -370,20 +406,37 @@ impl eframe::App for HabitTracker {
                 });
             });
 
-        if self.float_window.open {
-            // create open instance to satisfy borrow checker (closure unique access to self)
-            let mut open = self.float_window.open;
-            egui::Window::new("My Window")
-                // ERROR closuer need unique access (no borrowing before) to self
-                .open(&mut open)
-                .show(ui.ctx(), |ui| {
-                    self.display_float_window_content(ui);
-                });
-            self.float_window.open = open;
+        // float window
+        // create open instance to satisfy borrow checker (closure unique access to self)
+        let mut is_open = self.float_window.state.is_some();
+
+        egui::Window::new(self.float_window.name.clone())
+            .open(&mut is_open)
+            .show(ui.ctx(), |ui| {
+                self.display_float_window_content(ui);
+            });
+
+        if !is_open {
+            self.float_window.state = None
         }
 
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
+            if self.habits.is_empty() && self.selected_habit.is_empty() {
+                return;
+            }
+
+            // TODO handle when delete selected habit, i want centeral
+            //panel to be empty
+            if let None = self
+                .habits
+                .iter()
+                .find(|habit| habit.name == self.selected_habit)
+            {
+                self.selected_habit = String::new();
+                return;
+            }
+
             ui.vertical(|ui| {
                 self.display_centeral_panel_header(ui);
 
