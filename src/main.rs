@@ -1,6 +1,7 @@
 use eframe::{
     egui::{
-        self, vec2, Color32, Key, Label, Rgba, RichText, Sense, Ui, Vec2, Window,
+        self, vec2, Color32, EventFilter, Id, Key, Label, Rgba, RichText, Sense, Ui,
+        Vec2, Window,
     },
     Result,
 };
@@ -51,6 +52,13 @@ struct HabitTracker {
     selected_habit: String,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+struct Habit {
+    // used String instead of &'static str cuz of serde derive issue thing
+    name: String,
+    cells: Vec<Cell>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct FloatWindow {
     name: String,
@@ -61,13 +69,6 @@ struct FloatWindow {
 enum FloatWindowState {
     AddHabit(String),
     DeleteHabit(String),
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct Habit {
-    // used String instead of &'static str cuz of serde derive issue thing
-    name: String,
-    cells: Vec<Cell>,
 }
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
@@ -137,14 +138,7 @@ impl Cell {
 
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let cells = Cell::gen_cells_with_date();
-
-        //let habit_1 = Habit {
-        //    name: "reading".to_owned(),
-        //    cells: cells.clone(),
-        //};
-        //
-        //let habits = vec![habit_1.clone()];
+        let _ = Cell::gen_cells_with_date();
 
         // TODO i wanna remove shadowing here, it's wierd
         let habit_tracker = Self {
@@ -157,9 +151,7 @@ impl HabitTracker {
         };
 
         HabitTracker::check_file(&habit_tracker);
-        let habit_tracker = HabitTracker::load_file();
-
-        habit_tracker
+        HabitTracker::load_file()
     }
 
     fn check_file(habit_tracker: &HabitTracker) {
@@ -169,7 +161,7 @@ impl HabitTracker {
 
         let file = fs::metadata(TRACKER_FILE).unwrap();
         if file.len() == 0 {
-            HabitTracker::save_file(&habit_tracker);
+            HabitTracker::save_file(habit_tracker);
         }
     }
 
@@ -221,11 +213,14 @@ impl HabitTracker {
         for habit in self.habits.iter() {
             let habit_label =
                 RichText::new(habit.name.clone()).size(LEFT_PANEL_HABIT_TEXT_SIZE);
-            let _response = ui.selectable_value(
+            let response = ui.selectable_value(
                 &mut self.selected_habit,
                 habit.name.clone(),
                 habit_label,
             );
+
+            // NOTE sometimes work, i think cuz the app is slow
+            HabitTracker::disable_navigation_keys(ui, response.id);
         }
     }
 
@@ -249,22 +244,19 @@ impl HabitTracker {
         match &mut self.float_window.state {
             Some(FloatWindowState::AddHabit(name)) => {
                 let response = ui.text_edit_singleline(name);
+                HabitTracker::disable_navigation_keys(ui, response.id);
 
-                if response.lost_focus()
-                    && ui.input(|i| i.key_pressed(Key::Enter))
-                    && name.len() != 0
-                {
+                if ui.input(|i| i.key_pressed(Key::Enter)) && !name.is_empty() {
                     let cells = Cell::gen_cells_with_date();
                     let habit = Habit::new(name.clone(), cells);
                     self.habits.push(habit);
 
-                    HabitTracker::save_file(&self);
+                    HabitTracker::save_file(self);
 
                     self.float_window.reset_add_habit_name();
                 }
             }
 
-            // TODO centeralize selected habits on the floated window
             Some(FloatWindowState::DeleteHabit(selected_habit_delete)) => {
                 ui.vertical_centered(|ui| {
                     for habit in self.habits.iter() {
@@ -277,15 +269,14 @@ impl HabitTracker {
                         );
                     }
 
-                    if ui.input(|i| i.key_pressed(Key::Enter)) {
-                        if let Some(selected_habit_indx) = self
+                    if ui.input(|i| i.key_pressed(Key::Enter)) && 
+                        let Some(selected_habit_indx) = self
                             .habits
                             .iter_mut()
                             .position(|habit| habit.name == *selected_habit_delete)
                         {
                             let _ = self.habits.remove(selected_habit_indx);
                         }
-                    }
                 });
             }
 
@@ -295,14 +286,16 @@ impl HabitTracker {
 
     // central panel
     fn display_central_panel_cell(&mut self, ui: &mut Ui, curr_day_cell: usize) {
-        // display only selected habit, ignore the others (pefromance)
-        // search the selected habit to get habit from it (for cells)
-        let selected_habit = self
+        // display only selected habit, ignore the others (for pefromance)
+        // search the selected habit for habit's cells
+        let curr_displayed_habit = self
             .habits
             .iter_mut()
             .find(|habit| habit.name == self.selected_habit);
 
-        if let Some(habit) = selected_habit {
+        // i can't make self.save_file inside response block cuz of safety
+        let mut should_save = false;
+        if let Some(habit) = curr_displayed_habit {
             let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
             ui.painter().rect_filled(
                 rect,
@@ -310,7 +303,8 @@ impl HabitTracker {
                 habit.cells[curr_day_cell].color,
             );
 
-            if response.clicked() {
+            // remove keyboard interaction (only mouse)
+            if response.clicked() && !response.has_focus() {
                 habit.cells[curr_day_cell].color =
                     match habit.cells[curr_day_cell].color {
                         UNMARKED_CELL_COLOR => HALF_MARKED_CELL_COLOR,
@@ -318,11 +312,13 @@ impl HabitTracker {
                         HALF_MARKED_CELL_COLOR => MARKED_CELL_COLOR,
                         e => unreachable!("{:?}", e),
                     };
+
                 ui.painter().rect_filled(
                     rect,
                     CELL_RADIUS,
                     habit.cells[curr_day_cell].color,
                 );
+                should_save = true;
             }
 
             // enable tooltip (movable tiny pop window when hovering on a cell)
@@ -334,10 +330,9 @@ impl HabitTracker {
             response.on_hover_text_at_pointer(msg);
         }
 
-        // NOTE self.save_file() get called 60 times per sec
-        // TODO invoke it only when response.clicked() == true (i can't for now due
-        //to mut borrow and borrow at same scope)
-        self.save_file();
+        if should_save {
+            self.save_file();
+        }
     }
 
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
@@ -377,6 +372,18 @@ impl HabitTracker {
         ui.label(MONTHS[10]);
         ui.add_space(25.);
         ui.label(MONTHS[11]);
+    }
+
+    // NOTE didn't work (well) maybe cuz of performance
+    fn disable_navigation_keys(ui: &mut Ui, id: Id) {
+        ui.memory_mut(|mem| {
+            let event_filter = EventFilter {
+                escape: true,
+                tab: true,
+                ..Default::default()
+            };
+            mem.set_focus_lock_filter(id, event_filter);
+        });
     }
 }
 
@@ -422,16 +429,12 @@ impl eframe::App for HabitTracker {
 
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
-            if self.habits.is_empty() && self.selected_habit.is_empty() {
-                return;
-            }
-
-            // TODO handle when delete selected habit, i want centeral
-            //panel to be empty
-            if let None = self
+            // make empty centeral Panel if a selected habit deleted
+            if self
                 .habits
                 .iter()
                 .find(|habit| habit.name == self.selected_habit)
+                .is_none()
             {
                 self.selected_habit = String::new();
                 return;
