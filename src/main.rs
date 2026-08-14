@@ -1,16 +1,15 @@
-use eframe::{
-    egui::{
+use eframe::egui::{
         self, vec2, Color32, EventFilter, Id, Key, Label, Rgba, RichText, Sense, Ui,
-        Vec2, Window,
-    },
-    Result,
-};
+        Vec2,
+    };
 use serde::{Deserialize, Serialize};
-use serde_json::Result as ResultSerdeJson;
+use serde_json::{Result as ResultSerdeJson};
 use std::io::{self, Result as ResultIo};
 use std::{
+    fmt,
     fs::{self, File},
     path::Path,
+    error,
 };
 use time::Date;
 
@@ -80,7 +79,44 @@ struct Cell {
     color: Rgba,
 }
 
-fn main() -> Result {
+#[derive(Debug)]
+enum CustmError {
+    Eframe(eframe::Error),
+    Io(io::Error),
+    SerdeJson(serde_json::Error)
+}
+
+impl error::Error for CustmError {}
+
+impl From<eframe::Error> for CustmError {
+    fn from(e: eframe::Error) -> Self {
+        Self::Eframe(e)
+    }
+}
+
+impl From<io::Error> for CustmError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<serde_json::Error> for CustmError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::SerdeJson(e)
+    }
+}
+
+impl fmt::Display for CustmError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Eframe(e) => write!(f, "{}", e), 
+            Self::Io(e) =>write!(f, "{}", e),
+            Self::SerdeJson(e) =>write!(f, "{}", e),
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("simple habit tracker")
@@ -92,7 +128,7 @@ fn main() -> Result {
     eframe::run_native(
         "simple habit tracker",
         native_options,
-        Box::new(|cc| Ok(Box::new(HabitTracker::new(cc)))),
+        Box::new(|cc| Ok(Box::new(HabitTracker::new(cc)?))),
     )?;
     Ok(())
 }
@@ -137,7 +173,7 @@ impl Cell {
 }
 
 impl HabitTracker {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Result<Self, CustmError> {
         let _ = Cell::gen_cells_with_date();
 
         // TODO i wanna remove shadowing here, it's wierd
@@ -150,36 +186,41 @@ impl HabitTracker {
             selected_habit: String::new(),
         };
 
-        HabitTracker::check_file(&habit_tracker);
+        HabitTracker::check_file(&habit_tracker)?;
         HabitTracker::load_file()
     }
 
-    fn check_file(habit_tracker: &HabitTracker) {
+    fn check_file(habit_tracker: &HabitTracker) -> ResultIo<()> {
         if !Path::new(TRACKER_FILE).exists() {
-            let _ = File::create(TRACKER_FILE).unwrap();
+            let _ = File::create(TRACKER_FILE)?;
         }
 
-        let file = fs::metadata(TRACKER_FILE).unwrap();
+        let file = fs::metadata(TRACKER_FILE)?;
         if file.len() == 0 {
-            HabitTracker::save_file(habit_tracker);
+            HabitTracker::save_file(habit_tracker)?;
         }
+
+        Ok(())
     }
 
     // Desirialize
-    fn load_file() -> HabitTracker {
-        let file = fs::read_to_string(TRACKER_FILE).unwrap();
+    // NOTE this func can return different Results
+    fn load_file() -> Result<HabitTracker, CustmError> {
+        let file = fs::read_to_string(TRACKER_FILE)?;
         let habit_tracker: HabitTracker =
-            serde_json::from_str(file.as_str()).unwrap();
+            serde_json::from_str(file.as_str())?;
 
-        habit_tracker
+        Ok(habit_tracker)
     }
 
     // Serialize
-    fn save_file(&self) {
+    fn save_file(&self) -> ResultSerdeJson<()> {
         // doing to_string_pretty() slow the app
-        //let json = serde_json::to_string_pretty(self).unwrap();
-        let json = serde_json::to_string(self).unwrap();
+        //let json = serde_json::to_string_pretty(self)?;
+        let json = serde_json::to_string(self)?;
         let _ = fs::write(TRACKER_FILE, json);
+
+        Ok(())
     }
 }
 
@@ -211,15 +252,18 @@ impl HabitTracker {
 
     fn dispaly_left_panel_widgets(&mut self, ui: &mut Ui) {
         for habit in self.habits.iter() {
+
             let habit_label =
                 RichText::new(habit.name.clone()).size(LEFT_PANEL_HABIT_TEXT_SIZE);
+
             let response = ui.selectable_value(
                 &mut self.selected_habit,
                 habit.name.clone(),
                 habit_label,
             );
 
-            // NOTE sometimes work, i think cuz the app is slow
+            // TODO calling this func at the end user can press tab and it will hover the first habit
+            //i want to call this func at the top, i can't because i need response
             HabitTracker::disable_navigation_keys(ui, response.id);
         }
     }
@@ -251,7 +295,7 @@ impl HabitTracker {
                     let habit = Habit::new(name.clone(), cells);
                     self.habits.push(habit);
 
-                    HabitTracker::save_file(self);
+                    let _ = HabitTracker::save_file(self);
 
                     self.float_window.reset_add_habit_name();
                 }
@@ -331,7 +375,11 @@ impl HabitTracker {
         }
 
         if should_save {
-            self.save_file();
+            let res = self.save_file();
+            match res {
+                Ok(_) => {},
+                Err(e) => eprintln!("{e}"),
+            }
         }
     }
 
@@ -374,13 +422,14 @@ impl HabitTracker {
         ui.label(MONTHS[11]);
     }
 
-    // NOTE didn't work (well) maybe cuz of performance
+    // NOTE it will work just once
     fn disable_navigation_keys(ui: &mut Ui, id: Id) {
         ui.memory_mut(|mem| {
             let event_filter = EventFilter {
                 escape: true,
                 tab: true,
-                ..Default::default()
+                horizontal_arrows: true,
+                vertical_arrows: true,
             };
             mem.set_focus_lock_filter(id, event_filter);
         });
@@ -395,6 +444,8 @@ impl eframe::App for HabitTracker {
             .resizable(false)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
+
+                
                 ui.vertical(|ui| {
                     HabitTracker::display_left_panel_header(ui);
 
