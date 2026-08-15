@@ -1,7 +1,8 @@
 use eframe::egui::{
-        self, vec2, Color32, EventFilter, Id, Key, Label, Rgba, RichText, Sense, Ui,
+        self, vec2, Vec2b, Color32, EventFilter, Id, Key, Label, Rgba, RichText, Sense, Ui, TextEdit,
         Vec2,
     };
+use egui::Align2;
 use serde::{Deserialize, Serialize};
 use serde_json::{Result as ResultSerdeJson};
 use std::io::{self, Result as ResultIo};
@@ -13,16 +14,18 @@ use std::{
 };
 use time::Date;
 
-// window parameters
+// main window settings
 const WINDOW_SIZE: Vec2 = vec2(825., 400.);
 
-// left panel parameters
+// left panel settings
+const LEFT_PANEL_RESIZBLE: bool = false;  
 const LEFT_PANEL_SIZE: f32 = 100.;
 const HEADER_SIZE: f32 = 25.;
 const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
 const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 12.;
+const MAX_HABITS: usize = 6;
 
-// centeral panel parameters
+// time
 const YEAR: i32 = 2026;
 const DAYS_OF_YEAR: u16 = 365;
 const WEEK_DAYS: [&str; 7] = ["Thur", "Fri", "Sat", "Sun", "Mon", "Tus", "Wed"];
@@ -30,6 +33,8 @@ const MONTHS: [&str; 12] = [
     "Jan", "Fab", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
     "Dec",
 ];
+
+// centeral panel settings
 const DAY_LABEL_SIZE: Vec2 = vec2(35., 0.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
 const CELL_SIZE: Vec2 = vec2(10.5, 10.5);
@@ -37,7 +42,12 @@ const CELL_RADIUS: f32 = 3.;
 const MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.001, 0.102, 0.023);
 const UNMARKED_CELL_COLOR: Rgba = Rgba::from_gray(0.040);
 const HALF_MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.201, 0.098, 0.002);
-const MAX_HABITS: usize = 6;
+
+// floating window settings
+const RESIZABLE_FLOATING_WINDOW: Vec2b = Vec2b::FALSE;
+const COLLAPSIBLE_FLOATTING_WINDOW: bool = false;
+const WIDTH_FLOAT_WINDOW: f32 = 200.;
+const POS_FLOAT_WINDOW: Align2 = Align2::CENTER_CENTER; // pos -> anchor
 
 // I/O
 const TRACKER_FILE: &str = "save.json";
@@ -273,7 +283,8 @@ impl HabitTracker {
         if ui.button("add").clicked() {
             self.float_window.state =
                 Some(FloatWindowState::AddHabit{name: String::new(), hint: String::new()});
-            self.float_window.name = format!("add habit")
+            // i love whitespaces :)
+            self.float_window.name = format!("     add habit")
         }
     }
 
@@ -281,14 +292,15 @@ impl HabitTracker {
         if ui.button("delete").clicked() {
             self.float_window.state =
                 Some(FloatWindowState::DeleteHabit(String::new()));
-            self.float_window.name = format!("delete habit")
+            // i also love whitspaces :|
+            self.float_window.name = format!("      delete habit")
         }
     }
 
     fn display_float_window_content(&mut self, ui: &mut Ui) {
         match &mut self.float_window.state {
             Some(FloatWindowState::AddHabit{name,hint}) => {
-                let response = ui.add(egui::TextEdit::singleline(name).hint_text(hint.clone()));
+                let response = ui.add(TextEdit::singleline(name).hint_text(hint.clone()).desired_width(f32::INFINITY).horizontal_align(egui::Align::Center));
                 HabitTracker::disable_navigation_keys(ui, response.id);
 
                 if ui.input(|i| i.key_pressed(Key::Enter)) && !name.is_empty() {
@@ -458,17 +470,16 @@ impl eframe::App for HabitTracker {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         // Left panel
         egui::Panel::left("left_panel")
-            .resizable(false)
+            .resizable(LEFT_PANEL_RESIZBLE)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
-
                 
                 ui.vertical(|ui| {
-                    HabitTracker::display_left_panel_header(ui);
-
-                    ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
-
                     ui.vertical_centered_justified(|ui| {
+                        HabitTracker::display_left_panel_header(ui);
+
+                        ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
+
                         self.dispaly_left_panel_widgets(ui);
                     });
                     ui.with_layout(
@@ -487,7 +498,10 @@ impl eframe::App for HabitTracker {
 
         egui::Window::new(self.float_window.name.clone())
             .open(&mut is_open)
-            .resizable([false,false])
+            .resizable(RESIZABLE_FLOATING_WINDOW)
+            .collapsible(COLLAPSIBLE_FLOATTING_WINDOW)
+            .max_width(WIDTH_FLOAT_WINDOW)
+            .anchor(POS_FLOAT_WINDOW, [0.,0.])
             .show(ui.ctx(), |ui| {
                 self.display_float_window_content(ui);
             });
@@ -509,7 +523,9 @@ impl eframe::App for HabitTracker {
             }
 
             ui.vertical(|ui| {
-                self.display_centeral_panel_header(ui);
+                ui.vertical_centered(|ui| {
+                    self.display_centeral_panel_header(ui);
+                });
 
                 ui.horizontal(|ui| {
                     HabitTracker::display_months_raw(ui);
