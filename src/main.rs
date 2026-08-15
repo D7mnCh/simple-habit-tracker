@@ -66,7 +66,7 @@ struct FloatWindow {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 enum FloatWindowState {
-    AddHabit(String),
+    AddHabit{name: String, hint: String},
     DeleteHabit(String),
 }
 
@@ -79,6 +79,7 @@ struct Cell {
     color: Rgba,
 }
 
+// NOTE i think i can reduce boilerplate with trait object(i am not familiar with that concept)
 #[derive(Debug)]
 enum CustmError {
     Eframe(eframe::Error),
@@ -134,9 +135,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl FloatWindow {
+    fn reset_add_habit_hint(&mut self) {
+        match &mut self.state {
+            Some(FloatWindowState::AddHabit{hint, ..}) => *hint = String::new(),
+            _ => unreachable!("caller should only call this method when FloatWindowState is AddHabit "),
+        }
+    }
+
     fn reset_add_habit_name(&mut self) {
         match &mut self.state {
-            Some(FloatWindowState::AddHabit(name)) => *name = String::new(),
+            Some(FloatWindowState::AddHabit{name, ..}) => *name = String::new(),
             _ => unreachable!("caller should only call this method when FloatWindowState is AddHabit "),
         }
     }
@@ -204,7 +212,6 @@ impl HabitTracker {
     }
 
     // Desirialize
-    // NOTE this func can return different Results
     fn load_file() -> Result<HabitTracker, CustmError> {
         let file = fs::read_to_string(TRACKER_FILE)?;
         let habit_tracker: HabitTracker =
@@ -271,7 +278,7 @@ impl HabitTracker {
     fn display_buttton_add_habit(&mut self, ui: &mut Ui) {
         if ui.button("add").clicked() {
             self.float_window.state =
-                Some(FloatWindowState::AddHabit(String::new()));
+                Some(FloatWindowState::AddHabit{name: String::new(), hint: String::new()});
             self.float_window.name = String::from("add habit")
         }
     }
@@ -286,11 +293,16 @@ impl HabitTracker {
 
     fn display_float_window_content(&mut self, ui: &mut Ui) {
         match &mut self.float_window.state {
-            Some(FloatWindowState::AddHabit(name)) => {
-                let response = ui.text_edit_singleline(name);
+            Some(FloatWindowState::AddHabit{name,hint}) => {
+                let response = ui.add(egui::TextEdit::singleline(name).hint_text(hint.clone()));
                 HabitTracker::disable_navigation_keys(ui, response.id);
 
                 if ui.input(|i| i.key_pressed(Key::Enter)) && !name.is_empty() {
+                    if self.habits.iter().find(|habit| habit.name == *name).is_some(){
+                        *hint = String::from("used habit name");
+                        self.float_window.reset_add_habit_name();
+                        return;
+                    }
                     let cells = Cell::gen_cells_with_date();
                     let habit = Habit::new(name.clone(), cells);
                     self.habits.push(habit);
@@ -298,6 +310,7 @@ impl HabitTracker {
                     let _ = HabitTracker::save_file(self);
 
                     self.float_window.reset_add_habit_name();
+                    self.float_window.reset_add_habit_hint();
                 }
             }
 
@@ -375,6 +388,8 @@ impl HabitTracker {
         }
 
         if should_save {
+            // NOTE this is not rusty(kinda) to handle errors
+            // NOTE i can't propagate it all the way to update cuz it is an assoiated trait method
             let res = self.save_file();
             match res {
                 Ok(_) => {},
