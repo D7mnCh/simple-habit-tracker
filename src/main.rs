@@ -34,10 +34,10 @@ const DAY_LABEL_SIZE: Vec2 = vec2(35., 0.);
 const SPACE_BETWEEN_CELLS: Vec2 = vec2(2., -4.);
 const CELL_SIZE: Vec2 = vec2(10.5, 10.5);
 const CELL_RADIUS: f32 = 3.;
-// NOTE colors are not working
 const MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.001, 0.102, 0.023);
 const UNMARKED_CELL_COLOR: Rgba = Rgba::from_gray(0.040);
 const HALF_MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.201, 0.098, 0.002);
+const MAX_HABITS: usize = 6;
 
 // I/O
 const TRACKER_FILE: &str = "save.json";
@@ -72,9 +72,6 @@ enum FloatWindowState {
 
 #[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
 struct Cell {
-    // TODO make date [Option<Date>;DAY_OF_YEAR], Optinon needed for construction
-    // i could make Option Vec<Cell>, but Option is just needed for Date cuz it doesn't
-    //have Default trait
     date: Date,
     color: Rgba,
 }
@@ -87,6 +84,7 @@ enum CustmError {
     SerdeJson(serde_json::Error)
 }
 
+// my custmError need to impl StdError (error::Error) in fn main
 impl error::Error for CustmError {}
 
 impl From<eframe::Error> for CustmError {
@@ -167,9 +165,6 @@ impl Cell {
     }
 
     fn gen_cells_with_date() -> Vec<Cell> {
-        // TODO you should construct empty array/vec, cuz i'll get habits data from
-        //file, this program only add to that file,if false then i'll modify that file
-        //every time i lunch the app wapping out the saving
         let mut cells: Vec<Cell> = Vec::new();
         for day in 1..=DAYS_OF_YEAR {
             let cell = Cell::new(day);
@@ -184,7 +179,6 @@ impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Result<Self, CustmError> {
         let _ = Cell::gen_cells_with_date();
 
-        // TODO i wanna remove shadowing here, it's wierd
         let habit_tracker = Self {
             float_window: FloatWindow {
                 name: String::new(),
@@ -279,7 +273,7 @@ impl HabitTracker {
         if ui.button("add").clicked() {
             self.float_window.state =
                 Some(FloatWindowState::AddHabit{name: String::new(), hint: String::new()});
-            self.float_window.name = String::from("add habit")
+            self.float_window.name = format!("add habit")
         }
     }
 
@@ -287,7 +281,7 @@ impl HabitTracker {
         if ui.button("delete").clicked() {
             self.float_window.state =
                 Some(FloatWindowState::DeleteHabit(String::new()));
-            self.float_window.name = String::from("delete habit")
+            self.float_window.name = format!("delete habit")
         }
     }
 
@@ -298,11 +292,19 @@ impl HabitTracker {
                 HabitTracker::disable_navigation_keys(ui, response.id);
 
                 if ui.input(|i| i.key_pressed(Key::Enter)) && !name.is_empty() {
-                    if self.habits.iter().find(|habit| habit.name == *name).is_some(){
-                        *hint = String::from("used habit name");
+                    // i can't reduce code here cuz hint mutation needs a condition
+                    if self.habits.len() >= MAX_HABITS {
+                        *hint = format!("{MAX_HABITS} habits max");
                         self.float_window.reset_add_habit_name();
                         return;
                     }
+
+                    if self.habits.iter().any(|habit| habit.name == *name){
+                        *hint = format!("used habits name");
+                        self.float_window.reset_add_habit_name();
+                        return;
+                    }
+
                     let cells = Cell::gen_cells_with_date();
                     let habit = Habit::new(name.clone(), cells);
                     self.habits.push(habit);
@@ -485,6 +487,7 @@ impl eframe::App for HabitTracker {
 
         egui::Window::new(self.float_window.name.clone())
             .open(&mut is_open)
+            .resizable([false,false])
             .show(ui.ctx(), |ui| {
                 self.display_float_window_content(ui);
             });
@@ -496,11 +499,10 @@ impl eframe::App for HabitTracker {
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
             // make empty centeral Panel if a selected habit deleted
-            if self
+            if !self
                 .habits
                 .iter()
-                .find(|habit| habit.name == self.selected_habit)
-                .is_none()
+                .any(|habit| habit.name == self.selected_habit)
             {
                 self.selected_habit = String::new();
                 return;
