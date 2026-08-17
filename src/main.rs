@@ -47,6 +47,7 @@ const RESIZABLE_FLOATING_WINDOW: Vec2b = Vec2b::FALSE;
 const COLLAPSIBLE_FLOATTING_WINDOW: bool = false;
 const WIDTH_FLOAT_WINDOW: f32 = 200.;
 const POS_FLOAT_WINDOW: Align2 = Align2::CENTER_CENTER; // pos -> anchor
+const MAX_ADD_CHARS_TEXT: usize = 24;
 
 // I/O
 const TRACKER_FILE: &str = "save.json";
@@ -65,6 +66,7 @@ struct Habit {
     // used String instead of &'static str cuz of serde derive issue thing
     name: String,
     cells: Vec<Cell>,
+    notes: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -163,7 +165,11 @@ impl FloatWindow {
 
 impl Habit {
     fn new(name: String, cells: Vec<Cell>) -> Habit {
-        Self { name, cells }
+        Self {
+            name,
+            cells,
+            notes: String::new(),
+        }
     }
 }
 
@@ -228,9 +234,8 @@ impl HabitTracker {
 
     // Serialize
     fn save_file(&self) -> ResultSerdeJson<()> {
-        // doing to_string_pretty() slow the app
-        //let json = serde_json::to_string_pretty(self)?;
-        let json = serde_json::to_string(self)?;
+        let json = serde_json::to_string_pretty(self)?;
+        //let json = serde_json::to_string(self)?;
         let _ = fs::write(TRACKER_FILE, json);
 
         Ok(())
@@ -307,6 +312,7 @@ impl HabitTracker {
                     TextEdit::singleline(name)
                         .hint_text(hint.clone())
                         .desired_width(f32::INFINITY)
+                        .char_limit(MAX_ADD_CHARS_TEXT)
                         .horizontal_align(egui::Align::Center),
                 );
                 HabitTracker::disable_navigation_keys(ui, response.id);
@@ -413,6 +419,20 @@ impl HabitTracker {
         ui.heading(label);
     }
 
+    fn display_habit_notes_text_edit(&mut self, ui: &mut Ui) {
+        let current_habit = self
+            .habits
+            .iter_mut()
+            .find(|habit| habit.name == self.selected_habit);
+        if let Some(habit) = current_habit {
+            ui.add(
+                TextEdit::multiline(&mut habit.notes)
+                    .desired_rows(1)
+                    .lock_focus(true),
+            );
+        }
+    }
+
     fn display_week_day(ui: &mut Ui, day: &str) {
         let day_msg = RichText::new(day).size(10.15);
         ui.add_sized(DAY_LABEL_SIZE, Label::new(day_msg));
@@ -505,62 +525,67 @@ impl eframe::App for HabitTracker {
 
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
-            // make empty centeral Panel if a selected habit deleted
-            if !self
-                .habits
-                .iter()
-                .any(|habit| habit.name == self.selected_habit)
-            {
-                self.selected_habit = String::new();
-                return;
-            }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                // make empty centeral Panel if a selected habit deleted
+                if !self
+                    .habits
+                    .iter()
+                    .any(|habit| habit.name == self.selected_habit)
+                {
+                    self.selected_habit = String::new();
+                    return;
+                }
 
-            ui.vertical(|ui| {
-                ui.vertical_centered(|ui| {
-                    self.display_centeral_panel_header(ui);
-                });
-
-                ui.horizontal(|ui| {
-                    HabitTracker::display_months_raw(ui);
-                });
-
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        for day in WEEK_DAYS {
-                            HabitTracker::display_week_day(ui, day);
-                        }
+                ui.vertical(|ui| {
+                    ui.vertical_centered(|ui| {
+                        self.display_centeral_panel_header(ui);
                     });
 
-                    ui.vertical(|ui| {
-                        ui.scope(|ui| {
-                            HabitTracker::overide_cells_spacing(ui);
-                            for (week_day_indx, week_day) in
-                                WEEK_DAYS.iter().enumerate()
-                            {
-                                ui.horizontal(|ui| {
-                                    for week in 0..52 {
-                                        // each cell in each column is week * 7, add it with
-                                        //week_day_indx cuz notice +1 added in each
-                                        //raw starting from adding 0
-                                        let cell_indx = week * 7 + week_day_indx;
-                                        self.display_central_panel_cell(
-                                            ui, cell_indx,
-                                        );
+                    ui.horizontal(|ui| {
+                        HabitTracker::display_months_raw(ui);
+                    });
 
-                                        // adding last cell, cuz 52 * 7 = 364 of cells that get
-                                        //displayed
-                                        if *week_day == "Thur" && week == 51 {
-                                            const LAST_CELL_INDX: usize = 364;
-                                            self.display_central_panel_cell(
-                                                ui,
-                                                LAST_CELL_INDX,
-                                            );
-                                        }
-                                    }
-                                });
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            for day in WEEK_DAYS {
+                                HabitTracker::display_week_day(ui, day);
                             }
                         });
+
+                        ui.vertical(|ui| {
+                            ui.scope(|ui| {
+                                HabitTracker::overide_cells_spacing(ui);
+                                for (week_day_indx, week_day) in
+                                    WEEK_DAYS.iter().enumerate()
+                                {
+                                    ui.horizontal(|ui| {
+                                        for week in 0..52 {
+                                            // each cell in each column is week * 7, add it with
+                                            //week_day_indx cuz notice +1 added in each
+                                            //raw starting from adding 0
+                                            let cell_indx = week * 7 + week_day_indx;
+                                            self.display_central_panel_cell(
+                                                ui, cell_indx,
+                                            );
+
+                                            // adding last cell, cuz 52 * 7 = 364 of cells that get
+                                            //displayed
+                                            if *week_day == "Thur" && week == 51 {
+                                                const LAST_CELL_INDX: usize = 364;
+                                                self.display_central_panel_cell(
+                                                    ui,
+                                                    LAST_CELL_INDX,
+                                                );
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                        });
                     });
+                    ui.add_space(30.);
+                    ui.label(RichText::new("Notes").size(20.).underline());
+                    self.display_habit_notes_text_edit(ui);
                 });
             });
         });
