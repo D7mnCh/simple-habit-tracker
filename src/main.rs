@@ -1,16 +1,15 @@
 use eframe::egui::{
-        self, vec2, Vec2b, Color32, EventFilter, Id, Key, Label, Rgba, RichText, Sense, Ui, TextEdit,
-        Vec2,
-    };
+    self, Color32, EventFilter, Id, Key, Label, Rgba, RichText, Sense, TextEdit, Ui,
+    Vec2, Vec2b, vec2,
+};
 use egui::Align2;
 use serde::{Deserialize, Serialize};
-use serde_json::{Result as ResultSerdeJson};
+use serde_json::Result as ResultSerdeJson;
 use std::io::{self, Result as ResultIo};
 use std::{
-    fmt,
+    error, fmt,
     fs::{self, File},
     path::Path,
-    error,
 };
 use time::Date;
 
@@ -18,7 +17,7 @@ use time::Date;
 const WINDOW_SIZE: Vec2 = vec2(825., 400.);
 
 // left panel settings
-const LEFT_PANEL_RESIZBLE: bool = false;  
+const LEFT_PANEL_RESIZBLE: bool = false;
 const LEFT_PANEL_SIZE: f32 = 100.;
 const HEADER_SIZE: f32 = 25.;
 const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
@@ -76,7 +75,7 @@ struct FloatWindow {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 enum FloatWindowState {
-    AddHabit{name: String, hint: String},
+    AddHabit { name: String, hint: String },
     DeleteHabit(String),
 }
 
@@ -91,7 +90,7 @@ struct Cell {
 enum CustmError {
     Eframe(eframe::Error),
     Io(io::Error),
-    SerdeJson(serde_json::Error)
+    SerdeJson(serde_json::Error),
 }
 
 // my custmError need to impl StdError (error::Error) in fn main
@@ -118,9 +117,9 @@ impl From<serde_json::Error> for CustmError {
 impl fmt::Display for CustmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Eframe(e) => write!(f, "{}", e), 
-            Self::Io(e) =>write!(f, "{}", e),
-            Self::SerdeJson(e) =>write!(f, "{}", e),
+            Self::Eframe(e) => write!(f, "{}", e),
+            Self::Io(e) => write!(f, "{}", e),
+            Self::SerdeJson(e) => write!(f, "{}", e),
         }
     }
 }
@@ -145,15 +144,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 impl FloatWindow {
     fn reset_add_habit_hint(&mut self) {
         match &mut self.state {
-            Some(FloatWindowState::AddHabit{hint, ..}) => *hint = String::new(),
-            _ => unreachable!("caller should only call this method when FloatWindowState is AddHabit "),
+            Some(FloatWindowState::AddHabit { hint, .. }) => *hint = String::new(),
+            _ => unreachable!(
+                "caller should only call this method when FloatWindowState is AddHabit "
+            ),
         }
     }
 
     fn reset_add_habit_name(&mut self) {
         match &mut self.state {
-            Some(FloatWindowState::AddHabit{name, ..}) => *name = String::new(),
-            _ => unreachable!("caller should only call this method when FloatWindowState is AddHabit "),
+            Some(FloatWindowState::AddHabit { name, .. }) => *name = String::new(),
+            _ => unreachable!(
+                "caller should only call this method when FloatWindowState is AddHabit "
+            ),
         }
     }
 }
@@ -218,8 +221,7 @@ impl HabitTracker {
     // Desirialize
     fn load_file() -> Result<HabitTracker, CustmError> {
         let file = fs::read_to_string(TRACKER_FILE)?;
-        let habit_tracker: HabitTracker =
-            serde_json::from_str(file.as_str())?;
+        let habit_tracker: HabitTracker = serde_json::from_str(file.as_str())?;
 
         Ok(habit_tracker)
     }
@@ -261,9 +263,8 @@ impl HabitTracker {
         ui.heading(label);
     }
 
-    fn dispaly_left_panel_widgets(&mut self, ui: &mut Ui) {
+    fn dispaly_left_panel_habits(&mut self, ui: &mut Ui) {
         for habit in self.habits.iter() {
-
             let habit_label =
                 RichText::new(habit.name.clone()).size(LEFT_PANEL_HABIT_TEXT_SIZE);
 
@@ -281,8 +282,10 @@ impl HabitTracker {
 
     fn display_buttton_add_habit(&mut self, ui: &mut Ui) {
         if ui.button("add").clicked() {
-            self.float_window.state =
-                Some(FloatWindowState::AddHabit{name: String::new(), hint: String::new()});
+            self.float_window.state = Some(FloatWindowState::AddHabit {
+                name: String::new(),
+                hint: String::new(),
+            });
             // i love whitespaces :)
             self.float_window.name = format!("     add habit")
         }
@@ -299,8 +302,13 @@ impl HabitTracker {
 
     fn display_float_window_content(&mut self, ui: &mut Ui) {
         match &mut self.float_window.state {
-            Some(FloatWindowState::AddHabit{name,hint}) => {
-                let response = ui.add(TextEdit::singleline(name).hint_text(hint.clone()).desired_width(f32::INFINITY).horizontal_align(egui::Align::Center));
+            Some(FloatWindowState::AddHabit { name, hint }) => {
+                let response = ui.add(
+                    TextEdit::singleline(name)
+                        .hint_text(hint.clone())
+                        .desired_width(f32::INFINITY)
+                        .horizontal_align(egui::Align::Center),
+                );
                 HabitTracker::disable_navigation_keys(ui, response.id);
 
                 if ui.input(|i| i.key_pressed(Key::Enter)) && !name.is_empty() {
@@ -311,7 +319,7 @@ impl HabitTracker {
                         return;
                     }
 
-                    if self.habits.iter().any(|habit| habit.name == *name){
+                    if self.habits.iter().any(|habit| habit.name == *name) {
                         *hint = format!("used habits name");
                         self.float_window.reset_add_habit_name();
                         return;
@@ -320,8 +328,6 @@ impl HabitTracker {
                     let cells = Cell::gen_cells_with_date();
                     let habit = Habit::new(name.clone(), cells);
                     self.habits.push(habit);
-
-                    let _ = HabitTracker::save_file(self);
 
                     self.float_window.reset_add_habit_name();
                     self.float_window.reset_add_habit_hint();
@@ -340,14 +346,14 @@ impl HabitTracker {
                         );
                     }
 
-                    if ui.input(|i| i.key_pressed(Key::Enter)) && 
-                        let Some(selected_habit_indx) = self
+                    if ui.input(|i| i.key_pressed(Key::Enter))
+                        && let Some(selected_habit_indx) = self
                             .habits
                             .iter_mut()
                             .position(|habit| habit.name == *selected_habit_delete)
-                        {
-                            let _ = self.habits.remove(selected_habit_indx);
-                        }
+                    {
+                        let _ = self.habits.remove(selected_habit_indx);
+                    }
                 });
             }
 
@@ -365,7 +371,6 @@ impl HabitTracker {
             .find(|habit| habit.name == self.selected_habit);
 
         // i can't make self.save_file inside response block cuz of safety
-        let mut should_save = false;
         if let Some(habit) = curr_displayed_habit {
             let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
             ui.painter().rect_filled(
@@ -389,7 +394,6 @@ impl HabitTracker {
                     CELL_RADIUS,
                     habit.cells[curr_day_cell].color,
                 );
-                should_save = true;
             }
 
             // enable tooltip (movable tiny pop window when hovering on a cell)
@@ -399,16 +403,6 @@ impl HabitTracker {
                 habit.cells[curr_day_cell].date.weekday()
             );
             response.on_hover_text_at_pointer(msg);
-        }
-
-        if should_save {
-            // NOTE this is not rusty(kinda) to handle errors
-            // NOTE i can't propagate it all the way to update cuz it is an assoiated trait method
-            let res = self.save_file();
-            match res {
-                Ok(_) => {},
-                Err(e) => eprintln!("{e}"),
-            }
         }
     }
 
@@ -473,14 +467,13 @@ impl eframe::App for HabitTracker {
             .resizable(LEFT_PANEL_RESIZBLE)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
-                
                 ui.vertical(|ui| {
                     ui.vertical_centered_justified(|ui| {
                         HabitTracker::display_left_panel_header(ui);
 
                         ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
 
-                        self.dispaly_left_panel_widgets(ui);
+                        self.dispaly_left_panel_habits(ui);
                     });
                     ui.with_layout(
                         egui::Layout::left_to_right(egui::Align::BOTTOM),
@@ -501,7 +494,7 @@ impl eframe::App for HabitTracker {
             .resizable(RESIZABLE_FLOATING_WINDOW)
             .collapsible(COLLAPSIBLE_FLOATTING_WINDOW)
             .max_width(WIDTH_FLOAT_WINDOW)
-            .anchor(POS_FLOAT_WINDOW, [0.,0.])
+            .anchor(POS_FLOAT_WINDOW, [0., 0.])
             .show(ui.ctx(), |ui| {
                 self.display_float_window_content(ui);
             });
@@ -554,8 +547,8 @@ impl eframe::App for HabitTracker {
                                             ui, cell_indx,
                                         );
 
-                                        // adding last cell cuz 52 * 7 = 364 of total
-                                        //cells were displayed
+                                        // adding last cell, cuz 52 * 7 = 364 of cells that get
+                                        //displayed
                                         if *week_day == "Thur" && week == 51 {
                                             const LAST_CELL_INDX: usize = 364;
                                             self.display_central_panel_cell(
@@ -571,5 +564,9 @@ impl eframe::App for HabitTracker {
                 });
             });
         });
+    }
+
+    fn on_exit(&mut self) {
+        self.save_file().unwrap_or_else(|e| eprintln!("{e}"));
     }
 }
