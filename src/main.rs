@@ -16,7 +16,7 @@ use time::Date;
 const WINDOW_SIZE: Vec2 = vec2(825., 400.);
 
 // left panel settings
-const LEFT_PANEL_RESIZBLE: bool = false;
+const LEFT_PANEL_RESIZABLE: bool = false;
 const LEFT_PANEL_SIZE: f32 = 100.;
 const HEADER_SIZE: f32 = 25.;
 const LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS: f32 = 5.;
@@ -59,9 +59,11 @@ struct HabitTracker {
     float_window: FloatWindow,
     // neeced for building habit selecter widget
     // used String instead of &'static str for serde derive issues
-    // NOTE an id represent a selected habit instead of a string is much
-    //cleaner and will reduce boilerplate
-    selected_habit: String,
+    // id represent a selected habit (via indxing) instead of a
+    //string is much cleaner and will reduce boilerplate
+    // NOTE maybe i can remove Option by getting a prev element and do
+    //early return if no habits?
+    selected_habit: Option<usize>,
 }
 
 #[derive(Default, Deserialize, Serialize, Debug, Clone)]
@@ -74,24 +76,23 @@ struct Habit {
 
 #[derive(Default, Clone, Debug, Deserialize, Serialize)]
 struct FloatWindow {
-    name: String,
     state: Option<FloatWindowState>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 enum FloatWindowState {
     AddHabit { name: String, hint: String },
-    DeleteHabit(String),
+    DeleteHabit { selected_habit_indx: Option<usize> },
 }
 
-#[derive(Deserialize, Serialize, Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 struct Cell {
     date: Date,
     color: Rgba,
 }
 
 #[derive(Debug)]
-enum CustmError {
+enum CustomError {
     Eframe(eframe::Error),
     Io(io::Error),
     SerdeJson(serde_json::Error),
@@ -115,27 +116,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // my custmError need to impl StdError (error::Error) in fn main
-impl error::Error for CustmError {}
+impl error::Error for CustomError {}
 
-impl From<eframe::Error> for CustmError {
+impl From<eframe::Error> for CustomError {
     fn from(e: eframe::Error) -> Self {
         Self::Eframe(e)
     }
 }
 
-impl From<io::Error> for CustmError {
+impl From<io::Error> for CustomError {
     fn from(e: io::Error) -> Self {
         Self::Io(e)
     }
 }
 
-impl From<serde_json::Error> for CustmError {
+impl From<serde_json::Error> for CustomError {
     fn from(e: serde_json::Error) -> Self {
         Self::SerdeJson(e)
     }
 }
 
-impl fmt::Display for CustmError {
+impl fmt::Display for CustomError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Eframe(e) => e.fmt(f),
@@ -147,20 +148,14 @@ impl fmt::Display for CustmError {
 
 impl FloatWindow {
     fn reset_add_habit_hint(&mut self) {
-        match &mut self.state {
-            Some(FloatWindowState::AddHabit { hint, .. }) => *hint = String::new(),
-            _ => unreachable!(
-                "caller should only call this method when FloatWindowState is AddHabit "
-            ),
+        if let Some(FloatWindowState::AddHabit { hint, .. }) = &mut self.state {
+            hint.clear();
         }
     }
 
     fn reset_add_habit_name(&mut self) {
-        match &mut self.state {
-            Some(FloatWindowState::AddHabit { name, .. }) => *name = String::new(),
-            _ => unreachable!(
-                "caller should only call this method when FloatWindowState is AddHabit "
-            ),
+        if let Some(FloatWindowState::AddHabit { name, .. }) = &mut self.state {
+            name.clear();
         }
     }
 }
@@ -177,8 +172,8 @@ impl Habit {
 
 impl Cell {
     fn new(day: u16) -> Self {
-        // SAFETY: 2026 has 365, so it's nover gonna panic
-        let date = Date::from_ordinal_date(YEAR, day).unwrap();
+        let date =
+            Date::from_ordinal_date(YEAR, day).expect("day must be valid for year");
         Self {
             date,
             color: UNMARKED_CELL_COLOR,
@@ -190,15 +185,25 @@ impl Cell {
         //"fn(u16)-> Cell" it will coerce into Fnmut(u16) -> Cell(that's why is correct)
         (1..=DAYS_OF_YEAR).map(Cell::new).collect()
     }
+
+    // if a block mutate a struct(e.g Cell), should create a method for it
+    fn toggle_color(&mut self) {
+        self.color = match self.color {
+            UNMARKED_CELL_COLOR => HALF_MARKED_CELL_COLOR,
+            MARKED_CELL_COLOR => UNMARKED_CELL_COLOR,
+            HALF_MARKED_CELL_COLOR => MARKED_CELL_COLOR,
+            e => unreachable!("{:?}", e),
+        };
+    }
 }
 
 impl HabitTracker {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Result<Self, CustmError> {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Result<Self, CustomError> {
         HabitTracker::load_file()
     }
 
     // Desirialize
-    fn load_file() -> Result<HabitTracker, CustmError> {
+    fn load_file() -> Result<HabitTracker, CustomError> {
         if !Path::new(TRACKER_FILE).exists() {
             return Ok(HabitTracker::default());
         }
@@ -215,7 +220,7 @@ impl HabitTracker {
     }
 
     // Serialize
-    fn save_file(&self) -> Result<(), CustmError> {
+    fn save_file(&self) -> Result<(), CustomError> {
         let json = serde_json::to_string_pretty(self)?;
         fs::write(TRACKER_FILE, json)?;
 
@@ -226,7 +231,7 @@ impl HabitTracker {
 impl HabitTracker {
     // NOTE let tweaking visuals for later
     // visuals and style
-    fn _overide_left_panel_widgets_look(ui: &mut Ui) {
+    fn _override_left_panel_widgets_look(ui: &mut Ui) {
         let ui_visuals = ui.visuals_mut();
         // keyboard focus
         ui_visuals.widgets.active.weak_bg_fill = Color32::LIGHT_GREEN;
@@ -236,7 +241,7 @@ impl HabitTracker {
         ui_visuals.selection.bg_fill = Color32::BLUE;
     }
 
-    fn overide_cells_spacing(ui: &mut Ui) {
+    fn override_cells_spacing(ui: &mut Ui) {
         ui.spacing_mut().item_spacing = SPACE_BETWEEN_CELLS;
     }
 
@@ -248,14 +253,14 @@ impl HabitTracker {
         ui.heading(label);
     }
 
-    fn dispaly_left_panel_habits(&mut self, ui: &mut Ui) {
-        for habit in self.habits.iter() {
+    fn display_left_panel_habits(&mut self, ui: &mut Ui) {
+        for (indx, habit) in self.habits.iter().enumerate() {
             let habit_label =
-                RichText::new(habit.name.clone()).size(LEFT_PANEL_HABIT_TEXT_SIZE);
+                RichText::new(&habit.name).size(LEFT_PANEL_HABIT_TEXT_SIZE);
 
             let response = ui.selectable_value(
                 &mut self.selected_habit,
-                habit.name.clone(),
+                Some(indx),
                 habit_label,
             );
 
@@ -271,17 +276,14 @@ impl HabitTracker {
                 name: String::new(),
                 hint: String::new(),
             });
-            // i love whitespaces :)
-            self.float_window.name = format!("     add habit")
         }
     }
 
     fn display_buttton_delete_habit(&mut self, ui: &mut Ui) {
         if ui.button("delete").clicked() {
-            self.float_window.state =
-                Some(FloatWindowState::DeleteHabit(String::new()));
-            // i also love whitspaces :|
-            self.float_window.name = format!("      delete habit")
+            self.float_window.state = Some(FloatWindowState::DeleteHabit {
+                selected_habit_indx: None,
+            });
         }
     }
 
@@ -306,7 +308,7 @@ impl HabitTracker {
                     }
 
                     if self.habits.iter().any(|habit| habit.name == *name) {
-                        *hint = format!("used habits name");
+                        *hint = "used habit name".to_owned();
                         self.float_window.reset_add_habit_name();
                         return;
                     }
@@ -320,25 +322,25 @@ impl HabitTracker {
                 }
             }
 
-            Some(FloatWindowState::DeleteHabit(selected_habit_delete)) => {
+            // NOTE what about converting name field into usize?
+            Some(FloatWindowState::DeleteHabit {
+                selected_habit_indx,
+            }) => {
                 ui.vertical_centered(|ui| {
-                    for habit in self.habits.iter() {
-                        let habit_label = RichText::new(habit.name.clone())
+                    for (indx, habit) in self.habits.iter().enumerate() {
+                        let habit_label = RichText::new(&habit.name)
                             .size(LEFT_PANEL_HABIT_TEXT_SIZE);
                         let _response = ui.selectable_value(
-                            selected_habit_delete,
-                            habit.name.clone(),
+                            selected_habit_indx,
+                            Some(indx),
                             habit_label,
                         );
                     }
 
-                    if ui.input(|i| i.key_pressed(Key::Enter))
-                        && let Some(selected_habit_indx) = self
-                            .habits
-                            .iter_mut()
-                            .position(|habit| habit.name == *selected_habit_delete)
-                    {
-                        let _ = self.habits.remove(selected_habit_indx);
+                    if let Some(selected_habit_delete_indx) = selected_habit_indx {
+                        if ui.input(|i| i.key_pressed(Key::Enter)) {
+                            let _ = self.habits.remove(*selected_habit_delete_indx);
+                        }
                     }
                 });
             }
@@ -348,64 +350,43 @@ impl HabitTracker {
     }
 
     // central panel
-    fn display_central_panel_cell(&mut self, ui: &mut Ui, curr_day_cell: usize) {
+    fn display_central_panel_cell(
+        &mut self,
+        ui: &mut Ui,
+        curr_day_cell_indx: usize,
+    ) {
         // display only selected habit, ignore the others (for pefromance)
-        // search the selected habit for habit's cells
-        let curr_displayed_habit = self
-            .habits
-            .iter_mut()
-            .find(|habit| habit.name == self.selected_habit);
-
-        if let Some(habit) = curr_displayed_habit {
-            let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
-            ui.painter().rect_filled(
-                rect,
-                CELL_RADIUS,
-                habit.cells[curr_day_cell].color,
-            );
-
-            // remove keyboard interaction (only mouse)
+        let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
+        if let Some(selected_habit) = self.selected_habit {
+            let cell = &mut self.habits[selected_habit].cells[curr_day_cell_indx];
+            // has_focus() for removing keyboard interaction (only mouse)
             if response.clicked() && !response.has_focus() {
-                habit.cells[curr_day_cell].color =
-                    match habit.cells[curr_day_cell].color {
-                        UNMARKED_CELL_COLOR => HALF_MARKED_CELL_COLOR,
-                        MARKED_CELL_COLOR => UNMARKED_CELL_COLOR,
-                        HALF_MARKED_CELL_COLOR => MARKED_CELL_COLOR,
-                        e => unreachable!("{:?}", e),
-                    };
-
-                ui.painter().rect_filled(
-                    rect,
-                    CELL_RADIUS,
-                    habit.cells[curr_day_cell].color,
-                );
+                cell.toggle_color();
             }
 
+            // i was painting then mutating then repainting again, just mutate then
+            //paint
+            ui.painter().rect_filled(rect, CELL_RADIUS, cell.color);
+
             // enable tooltip (movable tiny pop window when hovering on a cell)
-            let msg = format!(
-                "{} {}",
-                habit.cells[curr_day_cell].date,
-                habit.cells[curr_day_cell].date.weekday()
-            );
+            let msg = format!("{} {}", cell.date, cell.date.weekday());
             response.on_hover_text_at_pointer(msg);
         }
     }
 
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
-        let header = self.selected_habit.clone();
-        let label = RichText::new(header).size(HEADER_SIZE).strong();
+        if let Some(selected_habit) = self.selected_habit {
+            let header = self.habits[selected_habit].name.clone();
+            let label = RichText::new(header).size(HEADER_SIZE).strong();
 
-        ui.heading(label);
+            ui.heading(label);
+        }
     }
 
     fn display_habit_notes_text_edit(&mut self, ui: &mut Ui) {
-        let current_habit = self
-            .habits
-            .iter_mut()
-            .find(|habit| habit.name == self.selected_habit);
-        if let Some(habit) = current_habit {
+        if let Some(selected_habit) = self.selected_habit {
             ui.add(
-                TextEdit::multiline(&mut habit.notes)
+                TextEdit::multiline(&mut self.habits[selected_habit].notes)
                     .desired_rows(1)
                     .lock_focus(true),
             );
@@ -446,7 +427,7 @@ impl eframe::App for HabitTracker {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         // Left panel
         egui::Panel::left("left_panel")
-            .resizable(LEFT_PANEL_RESIZBLE)
+            .resizable(LEFT_PANEL_RESIZABLE)
             .default_size(LEFT_PANEL_SIZE)
             .show(ui, |ui| {
                 ui.vertical(|ui| {
@@ -455,7 +436,7 @@ impl eframe::App for HabitTracker {
 
                         ui.add_space(LEFT_PANEL_SPACE_BETWEEN_HEADER_LABELS);
 
-                        self.dispaly_left_panel_habits(ui);
+                        self.display_left_panel_habits(ui);
                     });
                     ui.with_layout(
                         egui::Layout::left_to_right(egui::Align::BOTTOM),
@@ -470,8 +451,13 @@ impl eframe::App for HabitTracker {
         // float window
         // create open instance to satisfy borrow checker (closure unique access to self)
         let mut is_open = self.float_window.state.is_some();
+        let float_window_name = match &self.float_window.state {
+            Some(FloatWindowState::AddHabit { .. }) => "add habit".to_owned(),
+            Some(FloatWindowState::DeleteHabit { .. }) => "delete habit".to_owned(),
+            None => String::new(),
+        };
 
-        egui::Window::new(self.float_window.name.clone())
+        egui::Window::new(float_window_name)
             .open(&mut is_open)
             .resizable(RESIZABLE_FLOATING_WINDOW)
             .collapsible(COLLAPSIBLE_FLOATTING_WINDOW)
@@ -488,13 +474,21 @@ impl eframe::App for HabitTracker {
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
+                if self.selected_habit.is_none() {
+                    return;
+                }
+
                 // make empty centeral Panel if a selected habit deleted
-                if !self
+                // SEFETY: if self.selected_habit is checked before(early return),
+                //so always will be Some(value)
+                if self
                     .habits
-                    .iter()
-                    .any(|habit| habit.name == self.selected_habit)
+                    .get(self.selected_habit.expect(
+                        "self.selected_habit is Some, None varient was handled before",
+                    ))
+                    .is_none()
                 {
-                    self.selected_habit = String::new();
+                    self.selected_habit = None;
                     return;
                 }
 
@@ -516,7 +510,7 @@ impl eframe::App for HabitTracker {
 
                         ui.vertical(|ui| {
                             ui.scope(|ui| {
-                                HabitTracker::overide_cells_spacing(ui);
+                                HabitTracker::override_cells_spacing(ui);
                                 for (week_day_indx, week_day) in
                                     WEEK_DAYS.iter().enumerate()
                                 {
@@ -556,6 +550,8 @@ impl eframe::App for HabitTracker {
         });
     }
 
+    // NOTE if app crashes, changes will get loss
+    // TODO create a thread that runs every like 2mins to save_file
     fn on_exit(&mut self) {
         self.save_file().unwrap_or_else(|e| eprintln!("{e}"));
     }
