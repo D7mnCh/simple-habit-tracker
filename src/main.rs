@@ -4,8 +4,7 @@ use eframe::egui::{
 };
 use egui::Align2;
 use serde::{Deserialize, Serialize};
-use serde_json::Result as ResultSerdeJson;
-use std::io::{self, Result as ResultIo};
+use std::io;
 use std::{
     error, fmt,
     fs::{self, File},
@@ -41,6 +40,8 @@ const CELL_RADIUS: f32 = 3.;
 const MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.001, 0.102, 0.023);
 const UNMARKED_CELL_COLOR: Rgba = Rgba::from_gray(0.040);
 const HALF_MARKED_CELL_COLOR: Rgba = Rgba::from_rgb(0.201, 0.098, 0.002);
+const NOTES_LABEL_SIZE: f32 = 20.;
+const SPACE_BTW_MONTHS: f32 = 25.;
 
 // floating window settings
 const RESIZABLE_FLOATING_WINDOW: Vec2b = Vec2b::FALSE;
@@ -52,16 +53,18 @@ const MAX_ADD_CHARS_TEXT: usize = 24;
 // I/O
 const TRACKER_FILE: &str = "save.json";
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Default, Debug, Deserialize, Serialize)]
 struct HabitTracker {
     habits: Vec<Habit>,
     float_window: FloatWindow,
     // neeced for building habit selecter widget
     // used String instead of &'static str for serde derive issues
+    // NOTE an id represent a selected habit instead of a string is much
+    //cleaner and will reduce boilerplate
     selected_habit: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Default, Deserialize, Serialize, Debug, Clone)]
 struct Habit {
     // used String instead of &'static str cuz of serde derive issue thing
     name: String,
@@ -69,7 +72,7 @@ struct Habit {
     notes: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Default, Clone, Debug, Deserialize, Serialize)]
 struct FloatWindow {
     name: String,
     state: Option<FloatWindowState>,
@@ -87,12 +90,28 @@ struct Cell {
     color: Rgba,
 }
 
-// NOTE i think i can reduce boilerplate with trait object(i am not familiar with that concept)
 #[derive(Debug)]
 enum CustmError {
     Eframe(eframe::Error),
     Io(io::Error),
     SerdeJson(serde_json::Error),
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("simple habit tracker")
+            .with_resizable(false)
+            .with_inner_size(WINDOW_SIZE),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "simple habit tracker",
+        native_options,
+        Box::new(|cc| Ok(Box::new(HabitTracker::new(cc)?))),
+    )?;
+    Ok(())
 }
 
 // my custmError need to impl StdError (error::Error) in fn main
@@ -119,28 +138,11 @@ impl From<serde_json::Error> for CustmError {
 impl fmt::Display for CustmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Eframe(e) => write!(f, "{}", e),
-            Self::Io(e) => write!(f, "{}", e),
-            Self::SerdeJson(e) => write!(f, "{}", e),
+            Self::Eframe(e) => e.fmt(f),
+            Self::Io(e) => e.fmt(f),
+            Self::SerdeJson(e) => e.fmt(f),
         }
     }
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("simple habit tracker")
-            .with_resizable(false)
-            .with_inner_size(WINDOW_SIZE),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "simple habit tracker",
-        native_options,
-        Box::new(|cc| Ok(Box::new(HabitTracker::new(cc)?))),
-    )?;
-    Ok(())
 }
 
 impl FloatWindow {
@@ -184,59 +186,38 @@ impl Cell {
     }
 
     fn gen_cells_with_date() -> Vec<Cell> {
-        let mut cells: Vec<Cell> = Vec::new();
-        for day in 1..=DAYS_OF_YEAR {
-            let cell = Cell::new(day);
-            cells.push(cell);
-        }
-
-        cells
+        // .map(Cell::new), Cell::new is a function item with a signiture of
+        //"fn(u16)-> Cell" it will coerce into Fnmut(u16) -> Cell(that's why is correct)
+        (1..=DAYS_OF_YEAR).map(Cell::new).collect()
     }
 }
 
 impl HabitTracker {
     fn new(_cc: &eframe::CreationContext<'_>) -> Result<Self, CustmError> {
-        let _ = Cell::gen_cells_with_date();
-
-        let habit_tracker = Self {
-            float_window: FloatWindow {
-                name: String::new(),
-                state: None,
-            },
-            habits: Vec::new(),
-            selected_habit: String::new(),
-        };
-
-        HabitTracker::check_file(&habit_tracker)?;
         HabitTracker::load_file()
-    }
-
-    fn check_file(habit_tracker: &HabitTracker) -> ResultIo<()> {
-        if !Path::new(TRACKER_FILE).exists() {
-            let _ = File::create(TRACKER_FILE)?;
-        }
-
-        let file = fs::metadata(TRACKER_FILE)?;
-        if file.len() == 0 {
-            HabitTracker::save_file(habit_tracker)?;
-        }
-
-        Ok(())
     }
 
     // Desirialize
     fn load_file() -> Result<HabitTracker, CustmError> {
-        let file = fs::read_to_string(TRACKER_FILE)?;
-        let habit_tracker: HabitTracker = serde_json::from_str(file.as_str())?;
+        if !Path::new(TRACKER_FILE).exists() {
+            return Ok(HabitTracker::default());
+        }
 
-        Ok(habit_tracker)
+        let file = fs::read_to_string(TRACKER_FILE)?;
+        // file can go empty if user whant too -.-
+        if file.is_empty() {
+            return Ok(HabitTracker::default());
+        }
+
+        // NOTE handle when user manipulate TRACKER_FILE ?
+
+        Ok(serde_json::from_str(&file)?)
     }
 
     // Serialize
-    fn save_file(&self) -> ResultSerdeJson<()> {
+    fn save_file(&self) -> Result<(), CustmError> {
         let json = serde_json::to_string_pretty(self)?;
-        //let json = serde_json::to_string(self)?;
-        let _ = fs::write(TRACKER_FILE, json);
+        fs::write(TRACKER_FILE, json)?;
 
         Ok(())
     }
@@ -244,7 +225,6 @@ impl HabitTracker {
 
 impl HabitTracker {
     // NOTE let tweaking visuals for later
-
     // visuals and style
     fn _overide_left_panel_widgets_look(ui: &mut Ui) {
         let ui_visuals = ui.visuals_mut();
@@ -376,7 +356,6 @@ impl HabitTracker {
             .iter_mut()
             .find(|habit| habit.name == self.selected_habit);
 
-        // i can't make self.save_file inside response block cuz of safety
         if let Some(habit) = curr_displayed_habit {
             let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
             ui.painter().rect_filled(
@@ -439,30 +418,13 @@ impl HabitTracker {
     }
 
     fn display_months_raw(ui: &mut Ui) {
-        ui.add_space(43.);
+        ui.add_space(45.);
         ui.label(MONTHS[0]);
-        ui.add_space(30.);
-        ui.label(MONTHS[1]);
-        ui.add_space(20.);
-        ui.label(MONTHS[2]);
-        ui.add_space(24.);
-        ui.label(MONTHS[3]);
-        ui.add_space(22.);
-        ui.label(MONTHS[4]);
-        ui.add_space(25.);
-        ui.label(MONTHS[5]);
-        ui.add_space(25.);
-        ui.label(MONTHS[6]);
-        ui.add_space(25.);
-        ui.label(MONTHS[7]);
-        ui.add_space(25.);
-        ui.label(MONTHS[8]);
-        ui.add_space(25.);
-        ui.label(MONTHS[9]);
-        ui.add_space(25.);
-        ui.label(MONTHS[10]);
-        ui.add_space(25.);
-        ui.label(MONTHS[11]);
+
+        for indx in 1..=11 {
+            ui.add_space(SPACE_BTW_MONTHS);
+            ui.label(MONTHS[indx]);
+        }
     }
 
     // NOTE it will work just once
@@ -583,8 +545,11 @@ impl eframe::App for HabitTracker {
                             });
                         });
                     });
+
                     ui.add_space(30.);
-                    ui.label(RichText::new("Notes").size(20.).underline());
+
+                    ui.label(RichText::new("Notes").size(NOTES_LABEL_SIZE));
+
                     self.display_habit_notes_text_edit(ui);
                 });
             });
