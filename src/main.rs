@@ -5,15 +5,11 @@ use eframe::egui::{
 use egui::Align2;
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::{
-    error, fmt,
-    fs::{self, File},
-    path::Path,
-};
+use std::{collections::HashMap, error, fmt, fs, path::Path};
 use time::Date;
 
 // main window settings
-const WINDOW_SIZE: Vec2 = vec2(825., 400.);
+const WINDOW_SIZE: Vec2 = vec2(875., 400.);
 
 // left panel settings
 const LEFT_PANEL_RESIZABLE: bool = false;
@@ -24,8 +20,6 @@ const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 12.;
 const MAX_HABITS: usize = 6;
 
 // time
-const YEAR: i32 = 2026;
-const DAYS_OF_YEAR: u16 = 365;
 const WEEK_DAYS: [&str; 7] = ["Thur", "Fri", "Sat", "Sun", "Mon", "Tus", "Wed"];
 const MONTHS: [&str; 12] = [
     "Jan", "Fab", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
@@ -55,23 +49,15 @@ const TRACKER_FILE: &str = "save.json";
 
 #[derive(Default, Debug, Deserialize, Serialize)]
 struct HabitTracker {
-    habits: Vec<Habit>,
+    current_year: i32,
+    years: HashMap<i32, Vec<Habit>>,
     float_window: FloatWindow,
-    // neeced for building habit selecter widget
-    // used String instead of &'static str for serde derive issues
+    // neeced for building habit selected widget
     // id represent a selected habit (via indxing) instead of a
     //string is much cleaner and will reduce boilerplate
     // NOTE maybe i can remove Option by getting a prev element and do
     //early return if no habits?
     selected_habit: Option<usize>,
-}
-
-#[derive(Default, Deserialize, Serialize, Debug, Clone)]
-struct Habit {
-    // used String instead of &'static str cuz of serde derive issue thing
-    name: String,
-    cells: Vec<Cell>,
-    notes: String,
 }
 
 #[derive(Default, Clone, Debug, Deserialize, Serialize)]
@@ -83,6 +69,14 @@ struct FloatWindow {
 enum FloatWindowState {
     AddHabit { name: String, hint: String },
     DeleteHabit { selected_habit_indx: Option<usize> },
+}
+
+#[derive(Default, Deserialize, Serialize, Debug, Clone)]
+struct Habit {
+    // used String instead of &'static str cuz of serde derive issue thing
+    name: String,
+    cells: Vec<Cell>,
+    notes: String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -171,22 +165,29 @@ impl Habit {
 }
 
 impl Cell {
-    fn new(day: u16) -> Self {
-        let date =
-            Date::from_ordinal_date(YEAR, day).expect("day must be valid for year");
+    fn new(day: u16, year: i32) -> Self {
+        let date = Date::from_ordinal_date(year as i32, day)
+            .expect("day must be valid for year");
         Self {
             date,
             color: UNMARKED_CELL_COLOR,
         }
     }
 
-    fn gen_cells_with_date() -> Vec<Cell> {
-        // .map(Cell::new), Cell::new is a function item with a signiture of
-        //"fn(u16)-> Cell" it will coerce into Fnmut(u16) -> Cell(that's why is correct)
-        (1..=DAYS_OF_YEAR).map(Cell::new).collect()
+    fn gen_cells_with_date_and_year(year: i32) -> Vec<Cell> {
+        // TODO create days of year based on the year(leap year or not)
+        let days_of_year = if time::util::is_leap_year(year) {
+            366 as u16
+        } else {
+            365 as u16
+        };
+
+        // NOTE craete a range with an atteched value for each elelment in that range ?
+        (1..=days_of_year).map(|day| Cell::new(day, year)).collect()
     }
 
-    // if a block mutate a struct(e.g Cell), should create a method for it
+    // if a block mutate a struct(e.g Cell), you should create a method for it, and
+    // not make it on different struct method
     fn toggle_color(&mut self) {
         self.color = match self.color {
             UNMARKED_CELL_COLOR => HALF_MARKED_CELL_COLOR,
@@ -205,16 +206,32 @@ impl HabitTracker {
     // Desirialize
     fn load_file() -> Result<HabitTracker, CustomError> {
         if !Path::new(TRACKER_FILE).exists() {
-            return Ok(HabitTracker::default());
+            let mut years = HashMap::new();
+            for year in 2026..=2030 {
+                let _ = years.insert(year, Vec::new());
+            }
+            return Ok(HabitTracker {
+                current_year: 2026,
+                years,
+                ..Default::default()
+            });
         }
 
         let file = fs::read_to_string(TRACKER_FILE)?;
-        // file can go empty if user whant too -.-
+        // file can go empty if user do it -.-
         if file.is_empty() {
-            return Ok(HabitTracker::default());
+            let mut years = HashMap::new();
+            for year in 2026..=2030 {
+                let _ = years.insert(year, Vec::new());
+            }
+            return Ok(HabitTracker {
+                current_year: 2026,
+                years,
+                ..Default::default()
+            });
         }
 
-        // NOTE handle when user manipulate TRACKER_FILE ?
+        // NOTE handle when user manipulate TRACKER_FILE also ?
 
         Ok(serde_json::from_str(&file)?)
     }
@@ -254,7 +271,9 @@ impl HabitTracker {
     }
 
     fn display_left_panel_habits(&mut self, ui: &mut Ui) {
-        for (indx, habit) in self.habits.iter().enumerate() {
+        let habits = self.years.get(&self.current_year).unwrap();
+
+        for (indx, habit) in habits.iter().enumerate() {
             let habit_label =
                 RichText::new(&habit.name).size(LEFT_PANEL_HABIT_TEXT_SIZE);
 
@@ -270,7 +289,7 @@ impl HabitTracker {
         }
     }
 
-    fn display_buttton_add_habit(&mut self, ui: &mut Ui) {
+    fn display_button_add_habit(&mut self, ui: &mut Ui) {
         if ui.button("add").clicked() {
             self.float_window.state = Some(FloatWindowState::AddHabit {
                 name: String::new(),
@@ -279,7 +298,7 @@ impl HabitTracker {
         }
     }
 
-    fn display_buttton_delete_habit(&mut self, ui: &mut Ui) {
+    fn display_button_delete_habit(&mut self, ui: &mut Ui) {
         if ui.button("delete").clicked() {
             self.float_window.state = Some(FloatWindowState::DeleteHabit {
                 selected_habit_indx: None,
@@ -288,6 +307,8 @@ impl HabitTracker {
     }
 
     fn display_float_window_content(&mut self, ui: &mut Ui) {
+        let habits = self.years.get_mut(&self.current_year).unwrap();
+
         match &mut self.float_window.state {
             Some(FloatWindowState::AddHabit { name, hint }) => {
                 let response = ui.add(
@@ -301,21 +322,22 @@ impl HabitTracker {
 
                 if ui.input(|i| i.key_pressed(Key::Enter)) && !name.is_empty() {
                     // i can't reduce code here cuz hint mutation needs a condition
-                    if self.habits.len() >= MAX_HABITS {
+                    if habits.len() >= MAX_HABITS {
                         *hint = format!("{MAX_HABITS} habits max");
                         self.float_window.reset_add_habit_name();
                         return;
                     }
 
-                    if self.habits.iter().any(|habit| habit.name == *name) {
+                    if habits.iter().any(|habit| habit.name == *name) {
                         *hint = "used habit name".to_owned();
                         self.float_window.reset_add_habit_name();
                         return;
                     }
 
-                    let cells = Cell::gen_cells_with_date();
+                    let cells =
+                        Cell::gen_cells_with_date_and_year(self.current_year);
                     let habit = Habit::new(name.clone(), cells);
-                    self.habits.push(habit);
+                    habits.push(habit);
 
                     self.float_window.reset_add_habit_name();
                     self.float_window.reset_add_habit_hint();
@@ -327,7 +349,7 @@ impl HabitTracker {
                 selected_habit_indx,
             }) => {
                 ui.vertical_centered(|ui| {
-                    for (indx, habit) in self.habits.iter().enumerate() {
+                    for (indx, habit) in habits.iter().enumerate() {
                         let habit_label = RichText::new(&habit.name)
                             .size(LEFT_PANEL_HABIT_TEXT_SIZE);
                         let _response = ui.selectable_value(
@@ -339,7 +361,7 @@ impl HabitTracker {
 
                     if let Some(selected_habit_delete_indx) = selected_habit_indx {
                         if ui.input(|i| i.key_pressed(Key::Enter)) {
-                            let _ = self.habits.remove(*selected_habit_delete_indx);
+                            let _ = habits.remove(*selected_habit_delete_indx);
                         }
                     }
                 });
@@ -356,9 +378,11 @@ impl HabitTracker {
         curr_day_cell_indx: usize,
     ) {
         // display only selected habit, ignore the others (for pefromance)
+        let habits = self.years.get_mut(&self.current_year).unwrap();
+
         let (rect, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
         if let Some(selected_habit) = self.selected_habit {
-            let cell = &mut self.habits[selected_habit].cells[curr_day_cell_indx];
+            let cell = &mut habits[selected_habit].cells[curr_day_cell_indx];
             // has_focus() for removing keyboard interaction (only mouse)
             if response.clicked() && !response.has_focus() {
                 cell.toggle_color();
@@ -375,8 +399,10 @@ impl HabitTracker {
     }
 
     fn display_centeral_panel_header(&self, ui: &mut Ui) {
+        let habits = self.years.get(&self.current_year).unwrap();
+
         if let Some(selected_habit) = self.selected_habit {
-            let header = self.habits[selected_habit].name.clone();
+            let header = habits[selected_habit].name.clone();
             let label = RichText::new(header).size(HEADER_SIZE).strong();
 
             ui.heading(label);
@@ -384,9 +410,11 @@ impl HabitTracker {
     }
 
     fn display_habit_notes_text_edit(&mut self, ui: &mut Ui) {
+        let habits = self.years.get_mut(&self.current_year).unwrap();
+
         if let Some(selected_habit) = self.selected_habit {
             ui.add(
-                TextEdit::multiline(&mut self.habits[selected_habit].notes)
+                TextEdit::multiline(&mut habits[selected_habit].notes)
                     .desired_rows(1)
                     .lock_focus(true),
             );
@@ -420,6 +448,20 @@ impl HabitTracker {
             mem.set_focus_lock_filter(id, event_filter);
         });
     }
+
+    fn display_year_slider(&mut self, ui: &mut Ui) {
+        let response = ui.add(
+            egui::DragValue::new(&mut self.current_year)
+                .speed(0.1)
+                .range(2026..=2028),
+        );
+
+        if response.changed() {
+            // if not set to None, other years can have empty Vec, and selected_habit/indx
+            // is >= 0, i'll get(out of bound)
+            self.selected_habit = None;
+        }
+    }
 }
 
 impl eframe::App for HabitTracker {
@@ -438,11 +480,13 @@ impl eframe::App for HabitTracker {
 
                         self.display_left_panel_habits(ui);
                     });
+
+                    // buttons
                     ui.with_layout(
                         egui::Layout::left_to_right(egui::Align::BOTTOM),
                         |ui| {
-                            self.display_buttton_add_habit(ui);
-                            self.display_buttton_delete_habit(ui);
+                            self.display_button_add_habit(ui);
+                            self.display_button_delete_habit(ui);
                         },
                     );
                 });
@@ -475,25 +519,30 @@ impl eframe::App for HabitTracker {
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if self.selected_habit.is_none() {
+                    ui.vertical_centered(|ui| {
+                        self.display_year_slider(ui);
+                    });
                     return;
                 }
 
-                // make empty centeral Panel if a selected habit deleted
-                // SEFETY: if self.selected_habit is checked before(early return),
-                //so always will be Some(value)
-                if self
-                    .habits
+                // if selected habit deleted, don't show empty centeral panel 
+                let habits = self.years.get(&self.current_year).unwrap();
+                if habits
                     .get(self.selected_habit.expect(
                         "self.selected_habit is Some, None varient was handled before",
                     ))
                     .is_none()
                 {
                     self.selected_habit = None;
+                    ui.vertical_centered(|ui| {
+                        self.display_year_slider(ui);
+                    });
                     return;
                 }
 
                 ui.vertical(|ui| {
                     ui.vertical_centered(|ui| {
+                        self.display_year_slider(ui);
                         self.display_centeral_panel_header(ui);
                     });
 
