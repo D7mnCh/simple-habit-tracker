@@ -20,6 +20,8 @@ const LEFT_PANEL_HABIT_TEXT_SIZE: f32 = 12.;
 const MAX_HABITS: usize = 6;
 
 // time
+const FIRST_YEAR: usize = 2026;
+const LAST_YEAR: usize = 2028;
 const WEEK_DAYS: [&str; 7] = ["Thur", "Fri", "Sat", "Sun", "Mon", "Tus", "Wed"];
 const MONTHS: [&str; 12] = [
     "Jan", "Fab", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
@@ -477,13 +479,28 @@ impl HabitTracker {
     }
 
     fn display_year_slider(&mut self, ui: &mut Ui) {
+        //let (rect, response) = ui.allocate_exact_size(vec2(100., 20.), Sense::DRAG);
+        //ui.painter()
+        //    .rect_filled(rect, CELL_RADIUS, HALF_MARKED_CELL_COLOR);
+        //ui.painter().text(
+        //    rect.center(),
+        //    egui::Align2::CENTER_CENTER,
+        //    self.current_year_id.to_string(),
+        //    egui::TextStyle::Body.resolve(ui.style()),
+        //    ui.visuals().text_color(),
+        //);
+        //
+        //if response.dragged() {
+        //    self.current_year_id = (response.drag_motion().x * 0.1) as usize;
+        //}
+
+        let mut current_year = FIRST_YEAR + self.current_year_id;
         let _response = ui.add(
-            egui::DragValue::new(&mut self.current_year_id)
+            egui::DragValue::new(&mut current_year)
                 .speed(0.1)
-                // TODO
-                //.range(2026..=2028),
-                .range(0..=3),
+                .range(FIRST_YEAR..=LAST_YEAR),
         );
+        self.current_year_id = current_year - FIRST_YEAR;
     }
 }
 
@@ -541,31 +558,27 @@ impl eframe::App for HabitTracker {
         // Centeral Panel
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let year = &mut self.years[self.current_year_id];
-
-                if year.selected_habit_id.is_none() {
                     ui.vertical_centered(|ui| {
                         self.display_year_slider(ui);
                     });
+                let year = &mut self.years[self.current_year_id];
+
+                if year.selected_habit_id.is_none() {
                     return;
                 }
 
-                // if selected habit deleted, don't show empty centeral panel 
+                // if selected habit deleted, don't show empty centeral content  
                 if year.habits.get(year.selected_habit_id.expect(
                         "self.selected_habit_id is Some, None varient was handled before",
                     ))
                     .is_none()
                 {
                     year.selected_habit_id = None;
-                    ui.vertical_centered(|ui| {
-                        self.display_year_slider(ui);
-                    });
                     return;
                 }
 
                 ui.vertical(|ui| {
                     ui.vertical_centered(|ui| {
-                        self.display_year_slider(ui);
                         self.display_centeral_panel_header(ui);
                     });
 
